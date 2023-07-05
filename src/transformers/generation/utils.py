@@ -244,6 +244,7 @@ class SampleDecoderOnlyOutput(ModelOutput):
 
     sequences: torch.LongTensor = None
     scores: Optional[Tuple[torch.FloatTensor]] = None
+    embeddings: Optional[torch.FloatTensor] = None ## edits MN
     attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
 
@@ -2638,6 +2639,18 @@ class GenerationMixin:
 
             next_token_logits = outputs.logits[:, -1, :]
 
+            ## edits MN
+            if model_kwargs["inputs_embeds"] is not None:
+                inputs_embeds = model_inputs.get("inputs_embeds", None)
+                # print(next_token_logits.shape)
+                # print(inputs_embeds.shape)
+                inputs_embeds = torch.cat([inputs_embeds, next_token_logits.unsqueeze(1)], dim=1)
+                model_kwargs["inputs_embeds"]= inputs_embeds 
+                model_kwargs["past_key_values"]=None
+                # print(f"inputs_embeds {inputs_embeds.shape}")
+                # print(f"input_ids {input_ids.shape}")
+
+            
             # pre-process distribution
             next_token_scores = logits_processor(input_ids, next_token_logits)
             next_token_scores = logits_warper(input_ids, next_token_scores)
@@ -2712,6 +2725,7 @@ class GenerationMixin:
             else:
                 return SampleDecoderOnlyOutput(
                     sequences=input_ids,
+                    embeddings=inputs_embeds,
                     scores=scores,
                     attentions=decoder_attentions,
                     hidden_states=decoder_hidden_states,

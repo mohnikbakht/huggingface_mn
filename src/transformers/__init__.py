@@ -1835,6 +1835,7 @@ else:
     _import_structure["models.imagegpt"].extend(
         [
             "IMAGEGPT_PRETRAINED_MODEL_ARCHIVE_LIST",
+            "GPTForCardiacModeling", ## added MN
             "ImageGPTForCausalImageModeling",
             "ImageGPTForImageClassification",
             "ImageGPTModel",
@@ -5488,6 +5489,7 @@ if TYPE_CHECKING:
         )
         from .models.imagegpt import (
             IMAGEGPT_PRETRAINED_MODEL_ARCHIVE_LIST,
+            GPTForCardiacModeling, ## added MN
             ImageGPTForCausalImageModeling,
             ImageGPTForImageClassification,
             ImageGPTModel,

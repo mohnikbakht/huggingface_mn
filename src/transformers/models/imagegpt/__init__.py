@@ -38,6 +38,7 @@ except OptionalDependencyNotAvailable:
 else:
     _import_structure["modeling_imagegpt"] = [
         "IMAGEGPT_PRETRAINED_MODEL_ARCHIVE_LIST",
+        "GPTForCardiacModeling", ## added_MN
         "ImageGPTForCausalImageModeling",
         "ImageGPTForImageClassification",
         "ImageGPTModel",
@@ -66,6 +67,7 @@ if TYPE_CHECKING:
     else:
         from .modeling_imagegpt import (
             IMAGEGPT_PRETRAINED_MODEL_ARCHIVE_LIST,
+            GPTForCardiacModeling, ## added_MN
             ImageGPTForCausalImageModeling,
             ImageGPTForImageClassification,
             ImageGPTModel,
