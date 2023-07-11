@@ -927,7 +927,7 @@ class CardiacTokenizerEncoderMix(nn.Module):
         self.dropout2 = nn.Dropout(p=0.2)
         self.dropout3 = nn.Dropout(p=0.2)
  
-        self.projection = nn.Linear(embeddingConfig.sig_len, embeddingConfig.sig_len)
+        self.projection = nn.Linear(self.n_channels*self.sig_len, self.n_channels*self.sig_len)
 
         
     def forward(self,
@@ -936,10 +936,10 @@ class CardiacTokenizerEncoderMix(nn.Module):
         
         ### input (B, 1, in_channel*sig_len)
         ### output (B, 1, emb_size)
-                    
-        src_emb = src.reshape(src.shape[0], -1, self.n_channels, self.sig_len)
+        batch_size = src.shape[0]
+        src_emb = src.reshape(-1, self.n_channels, self.sig_len)
 
-        src_emb = self.upsample1(src)
+        src_emb = self.upsample1(src_emb)
 
         src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
         src_emb = self.dropout2(torch.relu(self.batch_norm2(self.conv2(src_emb))))
@@ -947,9 +947,9 @@ class CardiacTokenizerEncoderMix(nn.Module):
 
         # resnet for vanishing gradients
         # src_emb = src_emb1 + src_emb
-        
+
         src_emb = self.projection(src_emb) 
-        src_emb = src_emb.reshape(src_emb.shape[0], -1, 1, self.n_channels*self.sig_len)
+        src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
        
         return src_emb
 
@@ -990,15 +990,13 @@ class CardiacTokenizerDecoderMix(nn.Module):
         
         
        
-        self.batch_norm1 = nn.BatchNorm1d(1)
+        self.batch_norm1 = nn.BatchNorm1d(embeddingConfig.in_channels)
         self.batch_norm2 = nn.BatchNorm1d(embeddingConfig.in_channels)
-        self.batch_norm3 = nn.BatchNorm1d(embeddingConfig.in_channels)
 
         self.dropout1 = nn.Dropout(p=0.2)
         self.dropout2 = nn.Dropout(p=0.2)
-        self.dropout3 = nn.Dropout(p=0.2)
                     
-        self.projection = nn.Linear(embeddingConfig.sig_len, embeddingConfig.sig_len)
+        self.projection = nn.Linear(self.n_channels*self.sig_len, self.n_channels*self.sig_len)
         
         
     def forward(self,
@@ -1008,14 +1006,19 @@ class CardiacTokenizerDecoderMix(nn.Module):
         ### input (B, 1, sig_len*n_channels)
         ### output (B, n_channels, sig_len)
 
-        src_emb = src.reshape(src.shape[0], -1, self.n_channels, self.sig_len)
-
-        src_emb = self.projection(src_emb) 
+        batch_size = src.shape[0]
                     
+        src_emb = self.projection(src) 
+        src_emb = src_emb.reshape(-1, 1, self.n_channels*self.sig_len)
+                    
+        print(src_emb.shape)
         src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
+
         src_emb = self.pooling1(src_emb)
         src_emb = self.dropout2(torch.relu(self.batch_norm2(self.conv2(src_emb))))
         src_emb = self.conv3(src_emb)
+
+        src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
 
         return src_emb
 
@@ -1115,13 +1118,12 @@ class CardiacTokenizerDecoderConcat(nn.Module):
         ### input (B, Seq_len, sig_len*n_channels)
         ### output (B, n_channels, sig_len)
         batch_size = src.shape[0]
-
         src_emb = src.reshape(-1, self.n_channels, self.sig_len)
 
         src_emb = self.projection(src_emb) 
 
         src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
-        src_emb = self.dropout2(torch.relu(self.batch_norm2(self.conv2(src_emb))))
+        src_emb = self.conv2(src_emb)
                     
         src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
 
@@ -1137,19 +1139,27 @@ class CardiacEmbeddingAE(nn.Module):
                      
         self.embedding_size=embeddingConfig.sig_len * embeddingConfig.in_channels
 
-        ## CNN and flatten embedding
-        self.decoder=CardiacTokenizerDecoderConcat(embeddingConfig)
-        self.encoder=CardiacTokenizerEncoderConcat(embeddingConfig)
-
-        ## upsample CNN and transform to single channel
-        # self.decoder=CardiacTokenizerDecoderMix(embeddingConfig)
-        # self.encoder=CardiacTokenizerEncoderMix(embeddingConfig)
-        
         #debug
         self.decoderprenetoutput=None
         self.encoderprenetoutput=None
-        
-        self.apply(self._init_weights)
+                     
+        print(f"embedding type: {embeddingConfig.embedding_type}")
+        if embeddingConfig.embedding_type=="concat":
+            ## CNN and flatten embedding
+            self.decoder=CardiacTokenizerDecoderConcat(embeddingConfig)
+            self.encoder=CardiacTokenizerEncoderConcat(embeddingConfig)
+            self.apply(self._init_weights)
+
+        elif embeddingConfig.embedding_type=="mix":
+            ## upsample CNN and transform to single channel
+            self.decoder=CardiacTokenizerDecoderMix(embeddingConfig)
+            self.encoder=CardiacTokenizerEncoderMix(embeddingConfig)
+            self.apply(self._init_weights)
+
+        else:
+            self.decoder=None
+            self.encoder=None
+                    
 
     def _init_weights(self, module):
         if isinstance(module, nn.Conv1d) or isinstance(module, nn.Linear):
@@ -1335,7 +1345,8 @@ class GPTForCardiacModelingWithEmbedding(ImageGPTPreTrainedModel):
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        inputs_embeds = self.cardiac_embedding.encoder(inputs_embeds)
+        if self.cardiac_embedding.encoder is not None:
+            inputs_embeds = self.cardiac_embedding.encoder(inputs_embeds)
 
         transformer_outputs = self.transformer(
             input_ids,
@@ -1354,7 +1365,8 @@ class GPTForCardiacModelingWithEmbedding(ImageGPTPreTrainedModel):
         )
         hidden_states = transformer_outputs[0]
 
-        hidden_states = self.cardiac_embedding.decoder(hidden_states)
+        if self.cardiac_embedding.decoder is not None:
+            hidden_states = self.cardiac_embedding.decoder(hidden_states)
 
         # lm_logits = self.lm_head(hidden_states)
         lm_logits = hidden_states
