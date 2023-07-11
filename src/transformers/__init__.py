@@ -1836,6 +1836,7 @@ else:
         [
             "IMAGEGPT_PRETRAINED_MODEL_ARCHIVE_LIST",
             "GPTForCardiacModeling", ## added MN
+            "GPTForCardiacModelingWithEmbedding", ## added MN
             "ImageGPTForCausalImageModeling",
             "ImageGPTForImageClassification",
             "ImageGPTModel",
@@ -5490,6 +5491,7 @@ if TYPE_CHECKING:
         from .models.imagegpt import (
             IMAGEGPT_PRETRAINED_MODEL_ARCHIVE_LIST,
             GPTForCardiacModeling, ## added MN
+            GPTForCardiacModelingWithEmbedding, ## added MN
             ImageGPTForCausalImageModeling,
             ImageGPTForImageClassification,
             ImageGPTModel,
