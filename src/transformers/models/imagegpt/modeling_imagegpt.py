@@ -1060,7 +1060,7 @@ class CardiacTokenizerEncoderConcat(nn.Module):
         
         ### input (B, Seq_len, in_channel*sig_len)
         ### output (B, Seq_len, 1, emb_size)
-        print(src.shape)
+        # print(src.shape)
 
         batch_size = src.shape[0]
         src_emb = src.reshape(-1, self.n_channels, self.sig_len)
@@ -1127,7 +1127,7 @@ class CardiacTokenizerDecoderConcat(nn.Module):
 
         return src_emb
 
-    
+
 # Trainable Embedding for combining cardiac siganls into a 1D embedding vector
 class CardiacEmbeddingAE(nn.Module):
     def __init__(self,
