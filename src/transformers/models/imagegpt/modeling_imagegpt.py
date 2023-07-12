@@ -25,6 +25,7 @@ from torch import nn
 from torch.cuda.amp import autocast
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from torch import Tensor
+import copy
 
 from ...activations import ACT2FN
 from ...modeling_outputs import (
@@ -1011,7 +1012,6 @@ class CardiacTokenizerDecoderMix(nn.Module):
         src_emb = self.projection(src) 
         src_emb = src_emb.reshape(-1, 1, self.n_channels*self.sig_len)
                     
-        print(src_emb.shape)
         src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
 
         src_emb = self.pooling1(src_emb)
@@ -1129,7 +1129,122 @@ class CardiacTokenizerDecoderConcat(nn.Module):
 
         return src_emb
 
+def clones(module, N):
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+    
+# Trainable Embedding encoder
+class CardiacTokenizerEncoderLinear(nn.Module):
+    def __init__(self,
+                 embeddingConfig,
+                ):
+        # self.scg_token_length=token_length
+        super(CardiacTokenizerEncoderLinear, self).__init__()
+                    
+        self.n_channels = embeddingConfig.in_channels
+        self.sig_len = embeddingConfig.sig_len
+        self.num_hidden = self.n_channels*self.sig_len
+        self.embed_dim = self.n_channels*self.sig_len
 
+        self.dropout1 = nn.Dropout(p=0.2)
+        self.dropout2 = nn.Dropout(p=0.2)
+
+        self.fcn1 = nn.Linear(embeddingConfig.sig_len, embeddingConfig.sig_len)
+        self.fcn2 = nn.Linear(embeddingConfig.sig_len, embeddingConfig.sig_len)
+                    
+        self.projection = nn.Linear(self.num_hidden, self.num_hidden)
+
+        
+    def forward(self,
+                src: Tensor,
+                ):
+        
+        ### input (B, Seq_len, in_channel*sig_len)
+        ### output (B, Seq_len, in_channel*sig_len)
+        # print(src.shape)
+                    
+        src_emb = src.reshape(src.shape[0], src.shape[1], self.n_channels, self.sig_len)
+                    
+        src_emb = self.dropout1(torch.relu(self.fcn1(src_emb)))
+        src_emb = self.dropout2(torch.relu(self.fcn2(src_emb)))
+        # src_emb = self.dropout1(torch.relu(self.batch_norm3(self.fcn3(src_emb).transpose(1,2)))).transpose(1,2)
+
+
+        src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.embed_dim)
+        src_emb = self.projection(src_emb) 
+
+        return src_emb
+
+    
+# Trainable Embedding decoder
+class CardiacTokenizerDecoderLinear(nn.Module):
+    def __init__(self,
+                 embeddingConfig,
+                ):
+        # self.scg_token_length=token_length
+        super(CardiacTokenizerDecoderLinear, self).__init__()
+
+        self.n_channels = embeddingConfig.in_channels
+        self.sig_len = embeddingConfig.sig_len
+        self.num_hidden = self.n_channels*self.sig_len
+                    
+        self.projection = nn.Linear(self.num_hidden, self.num_hidden)
+                    
+        self.conv1 = nn.Conv1d(in_channels= self.num_hidden,
+                          out_channels=self.num_hidden,
+                          kernel_size=5,
+                          padding=4)
+        
+        self.conv_list = clones(nn.Conv1d(in_channels=self.num_hidden,
+                                     out_channels=self.num_hidden,
+                                     kernel_size=5,
+                                     padding=4), 3)
+        
+        self.conv2 = nn.Conv1d(in_channels=self.num_hidden,
+                          out_channels= self.num_hidden,
+                          kernel_size=5,
+                          padding=4)
+        
+        self.pre_batchnorm = nn.BatchNorm1d(self.num_hidden)
+        self.batch_norm_list = clones(nn.BatchNorm1d(self.num_hidden), 3)
+
+        self.dropout1 = nn.Dropout(p=0.1)
+        self.dropout_list = nn.ModuleList([nn.Dropout(p=0.1) for _ in range(3)])
+
+                    
+    def forward(self,
+                src: Tensor,
+                ):
+                
+        ### input (B, Seq_len, sig_len*n_channels)
+        ### output (B, Seq_len, n_channels, sig_len)
+                    
+        src_emb = self.projection(src)
+        # src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.n_channels*self.sig_len)
+        ### -> (B, Seq_len, n_channels*sig_len)
+                    
+        bin_out = src_emb.transpose(1,2)
+        ### -> (B, n_channels*sig_len, Seq_len)
+        src_emb = self.dropout1(torch.relu(self.pre_batchnorm(self.conv1(bin_out)[:, :, :-4])))
+        ### -> (B, n_channels*sig_len, Seq_len)
+
+        for batch_norm, conv, dropout in zip(self.batch_norm_list, self.conv_list, self.dropout_list):
+            src_emb = dropout(torch.relu(batch_norm(conv(src_emb)[:, :, :-4])))
+            ### -> (B, n_channels*sig_len, Seq_len)
+
+        src_emb = self.conv2(src_emb)[:, :, :-4]
+        ### -> (B, n_channels*sig_len, Seq_len)
+
+        # src_emb = self.projection(src_emb) 
+        
+        # equivalent to Post Mel Network from the TTS paper
+        src_emb = bin_out + src_emb
+
+        src_emb = src_emb.transpose(1, 2)
+        # src_emb = src_emb.reshape(src_emb.shape[0], src_emb.shape[1], self.embed_dim)
+        ### -> (B, Seq_len, n_channels*sig_len)
+
+        return src_emb #, bin_out.transpose(1, 2)
+           
 # Trainable Embedding for combining cardiac siganls into a 1D embedding vector
 class CardiacEmbeddingAE(nn.Module):
     def __init__(self,
@@ -1154,6 +1269,12 @@ class CardiacEmbeddingAE(nn.Module):
             ## upsample CNN and transform to single channel
             self.decoder=CardiacTokenizerDecoderMix(embeddingConfig)
             self.encoder=CardiacTokenizerEncoderMix(embeddingConfig)
+            self.apply(self._init_weights)
+
+        elif embeddingConfig.embedding_type=="linear":
+            ## upsample CNN and transform to single channel
+            self.decoder=CardiacTokenizerDecoderLinear(embeddingConfig)
+            self.encoder=CardiacTokenizerEncoderLinear(embeddingConfig)
             self.apply(self._init_weights)
 
         else:
