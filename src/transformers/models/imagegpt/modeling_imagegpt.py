@@ -1148,8 +1148,8 @@ class CardiacTokenizerEncoderLinear(nn.Module):
         self.dropout1 = nn.Dropout(p=0.2)
         self.dropout2 = nn.Dropout(p=0.2)
 
-        self.fcn1 = nn.Linear(embeddingConfig.sig_len, embeddingConfig.sig_len)
-        self.fcn2 = nn.Linear(embeddingConfig.sig_len, embeddingConfig.sig_len)
+        self.fcn1 = nn.Linear(self.num_hidden, self.num_hidden)
+        self.fcn2 = nn.Linear(self.num_hidden, self.num_hidden)
                     
         self.projection = nn.Linear(self.num_hidden, self.num_hidden)
 
@@ -1162,14 +1162,14 @@ class CardiacTokenizerEncoderLinear(nn.Module):
         ### output (B, Seq_len, in_channel*sig_len)
         # print(src.shape)
                     
-        src_emb = src.reshape(src.shape[0], src.shape[1], self.n_channels, self.sig_len)
+        # src_emb = src.reshape(src.shape[0], src.shape[1], self.n_channels, self.sig_len)
                     
-        src_emb = self.dropout1(torch.relu(self.fcn1(src_emb)))
+        src_emb = self.dropout1(torch.relu(self.fcn1(src)))
         src_emb = self.dropout2(torch.relu(self.fcn2(src_emb)))
         # src_emb = self.dropout1(torch.relu(self.batch_norm3(self.fcn3(src_emb).transpose(1,2)))).transpose(1,2)
 
 
-        src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.embed_dim)
+        # src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.embed_dim)
         src_emb = self.projection(src_emb) 
 
         return src_emb
@@ -1272,7 +1272,7 @@ class CardiacEmbeddingAE(nn.Module):
             self.apply(self._init_weights)
 
         elif embeddingConfig.embedding_type=="linear":
-            ## upsample CNN and transform to single channel
+            ## same prenet and postnet of synth scg generator
             self.decoder=CardiacTokenizerDecoderLinear(embeddingConfig)
             self.encoder=CardiacTokenizerEncoderLinear(embeddingConfig)
             self.apply(self._init_weights)
