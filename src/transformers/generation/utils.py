@@ -107,6 +107,7 @@ class GreedySearchDecoderOnlyOutput(ModelOutput):
     scores: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    embeddings: Optional[torch.FloatTensor] = None ## edits MN
 
 
 @dataclass
@@ -217,6 +218,7 @@ class GreedySearchEncoderDecoderOutput(ModelOutput):
     decoder_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     cross_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     decoder_hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+
 
 
 @dataclass
@@ -2359,6 +2361,18 @@ class GenerationMixin:
 
             next_token_logits = outputs.logits[:, -1, :]
 
+            ## edits MN
+            if model_kwargs["inputs_embeds"] is not None:
+                inputs_embeds = model_inputs.get("inputs_embeds", None)
+                # print(next_token_logits.shape)
+                # print(inputs_embeds.shape)
+                inputs_embeds = torch.cat([inputs_embeds, next_token_logits.unsqueeze(1)], dim=1)
+                model_kwargs["inputs_embeds"]= inputs_embeds 
+                model_kwargs["past_key_values"]=None
+                # print(f"inputs_embeds {inputs_embeds.shape}")
+                # print(f"input_ids {input_ids.shape}")
+
+            
             # pre-process distribution
             next_tokens_scores = logits_processor(input_ids, next_token_logits)
 
@@ -2431,6 +2445,7 @@ class GenerationMixin:
             else:
                 return GreedySearchDecoderOnlyOutput(
                     sequences=input_ids,
+                    embeddings=inputs_embeds, ## MN edit
                     scores=scores,
                     attentions=decoder_attentions,
                     hidden_states=decoder_hidden_states,
@@ -2725,7 +2740,7 @@ class GenerationMixin:
             else:
                 return SampleDecoderOnlyOutput(
                     sequences=input_ids,
-                    embeddings=inputs_embeds,
+                    embeddings=inputs_embeds, ## MN edit
                     scores=scores,
                     attentions=decoder_attentions,
                     hidden_states=decoder_hidden_states,

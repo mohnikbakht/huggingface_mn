@@ -146,6 +146,9 @@ class ImageGPTConfig(PretrainedConfig):
         self.reorder_and_upcast_attn = reorder_and_upcast_attn
         self.tie_word_embeddings = tie_word_embeddings
 
+        ## MN edit
+        self.embedding_type = None
+        
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
 

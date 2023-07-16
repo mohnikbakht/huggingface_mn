@@ -23,7 +23,7 @@ import torch
 import torch.utils.checkpoint
 from torch import nn
 from torch.cuda.amp import autocast
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss, L1Loss
 from torch import Tensor
 import copy
 
@@ -1148,8 +1148,8 @@ class CardiacTokenizerEncoderLinear(nn.Module):
         self.dropout1 = nn.Dropout(p=0.2)
         self.dropout2 = nn.Dropout(p=0.2)
 
-        self.fcn1 = nn.Linear(self.num_hidden, self.num_hidden)
-        self.fcn2 = nn.Linear(self.num_hidden, self.num_hidden)
+        self.fcn1 = nn.Linear(self.sig_len, self.sig_len)
+        self.fcn2 = nn.Linear(self.sig_len, self.sig_len)
                     
         self.projection = nn.Linear(self.num_hidden, self.num_hidden)
 
@@ -1158,18 +1158,18 @@ class CardiacTokenizerEncoderLinear(nn.Module):
                 src: Tensor,
                 ):
         
-        ### input (B, Seq_len, in_channel*sig_len)
-        ### output (B, Seq_len, in_channel*sig_len)
+        ## input (B, Seq_len, in_channel*sig_len)
+        ## output (B, Seq_len, in_channel*sig_len)
         # print(src.shape)
                     
-        # src_emb = src.reshape(src.shape[0], src.shape[1], self.n_channels, self.sig_len)
+        src_emb = src.reshape(src.shape[0], src.shape[1], self.n_channels, self.sig_len)
                     
-        src_emb = self.dropout1(torch.relu(self.fcn1(src)))
+        src_emb = self.dropout1(torch.relu(self.fcn1(src_emb)))
         src_emb = self.dropout2(torch.relu(self.fcn2(src_emb)))
         # src_emb = self.dropout1(torch.relu(self.batch_norm3(self.fcn3(src_emb).transpose(1,2)))).transpose(1,2)
 
 
-        # src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.embed_dim)
+        src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.embed_dim)
         src_emb = self.projection(src_emb) 
 
         return src_emb
@@ -1224,11 +1224,15 @@ class CardiacTokenizerDecoderLinear(nn.Module):
                     
         bin_out = src_emb.transpose(1,2)
         ### -> (B, n_channels*sig_len, Seq_len)
-        src_emb = self.dropout1(torch.relu(self.pre_batchnorm(self.conv1(bin_out)[:, :, :-4])))
+        # src_emb = self.dropout1(torch.relu(self.pre_batchnorm(self.conv1(bin_out)[:, :, :-4])))
+        src_emb = self.dropout1(torch.relu((self.conv1(bin_out)[:, :, :-4])))
+
         ### -> (B, n_channels*sig_len, Seq_len)
 
         for batch_norm, conv, dropout in zip(self.batch_norm_list, self.conv_list, self.dropout_list):
-            src_emb = dropout(torch.relu(batch_norm(conv(src_emb)[:, :, :-4])))
+            # src_emb = dropout(torch.relu(batch_norm(conv(src_emb)[:, :, :-4])))
+            src_emb = dropout(torch.relu((conv(src_emb)[:, :, :-4])))
+
             ### -> (B, n_channels*sig_len, Seq_len)
 
         src_emb = self.conv2(src_emb)[:, :, :-4]
@@ -1314,6 +1318,19 @@ class CardiacEmbeddingAE(nn.Module):
         return src_emb
 
 
+class CardiacGPTEmbeddingConfig():
+   
+    def __init__(
+        self,
+        in_channels=3,  
+        sig_len=80,
+        embedding_type="concat",
+        **kwargs,
+    ):
+        self.in_channels = in_channels
+        self.sig_len = sig_len
+        self.embedding_type=embedding_type
+        
 @add_start_docstrings(
     """
     The CardioGPT Model transformer using embeddings for cardiac beat generation. Using autoencoders (as trainable embeddings) for transforming cardiac signals to embedding vectors.
@@ -1323,11 +1340,12 @@ class CardiacEmbeddingAE(nn.Module):
 class GPTForCardiacModelingWithEmbedding(ImageGPTPreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
-    def __init__(self, config: ImageGPTConfig, embeddingConfig):
+    def __init__(self, config: ImageGPTConfig):
         super().__init__(config)
         self.transformer = ImageGPTModel(config)
         # self.lm_head = nn.Linear(config.n_embd, config.vocab_size - 1, bias=False)
-        
+
+        embeddingConfig = CardiacGPTEmbeddingConfig(in_channels=3, sig_len=80, embedding_type=config.embedding_type)
         self.cardiac_embedding = CardiacEmbeddingAE(embeddingConfig)
 
         # Model parallel
@@ -1374,6 +1392,7 @@ class GPTForCardiacModelingWithEmbedding(ImageGPTPreTrainedModel):
             model_inputs = {"inputs_embeds": inputs_embeds}
         else:
             model_inputs = {"input_ids": input_ids}
+
 
         model_inputs.update(
             {
@@ -1504,7 +1523,8 @@ class GPTForCardiacModelingWithEmbedding(ImageGPTPreTrainedModel):
 
             shift_logits = lm_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:, :].contiguous()
-            loss_fct = MSELoss()
+            # loss_fct = MSELoss(reduction='sum')
+            loss_fct = L1Loss(reduction='mean')
 
             loss = loss_fct(shift_logits.view(-1), shift_labels.view(-1))
 
