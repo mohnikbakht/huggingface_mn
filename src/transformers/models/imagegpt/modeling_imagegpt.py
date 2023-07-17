@@ -1191,18 +1191,18 @@ class CardiacTokenizerDecoderLinear(nn.Module):
                     
         self.conv1 = nn.Conv1d(in_channels= self.num_hidden,
                           out_channels=self.num_hidden,
-                          kernel_size=5,
-                          padding=4)
+                          kernel_size=3,
+                          padding=2)
         
         self.conv_list = clones(nn.Conv1d(in_channels=self.num_hidden,
                                      out_channels=self.num_hidden,
-                                     kernel_size=5,
-                                     padding=4), 3)
+                                     kernel_size=3,
+                                     padding=2), 3)
         
         self.conv2 = nn.Conv1d(in_channels=self.num_hidden,
                           out_channels= self.num_hidden,
-                          kernel_size=5,
-                          padding=4)
+                          kernel_size=3,
+                          padding=2)
         
         self.pre_batchnorm = nn.BatchNorm1d(self.num_hidden)
         self.batch_norm_list = clones(nn.BatchNorm1d(self.num_hidden), 3)
@@ -1224,14 +1224,14 @@ class CardiacTokenizerDecoderLinear(nn.Module):
                     
         bin_out = src_emb.transpose(1,2)
         ### -> (B, n_channels*sig_len, Seq_len)
-        # src_emb = self.dropout1(torch.relu(self.pre_batchnorm(self.conv1(bin_out)[:, :, :-4])))
-        src_emb = self.dropout1(torch.relu((self.conv1(bin_out)[:, :, :-4])))
+        src_emb = self.dropout1(torch.relu(self.pre_batchnorm(self.conv1(bin_out)[:, :, :-4])))
+        # src_emb = self.dropout1(torch.relu((self.conv1(bin_out)[:, :, :-4])))
 
         ### -> (B, n_channels*sig_len, Seq_len)
 
         for batch_norm, conv, dropout in zip(self.batch_norm_list, self.conv_list, self.dropout_list):
-            # src_emb = dropout(torch.relu(batch_norm(conv(src_emb)[:, :, :-4])))
-            src_emb = dropout(torch.relu((conv(src_emb)[:, :, :-4])))
+            src_emb = dropout(torch.relu(batch_norm(conv(src_emb)[:, :, :-4])))
+            # src_emb = dropout(torch.relu((conv(src_emb)[:, :, :-4])))
 
             ### -> (B, n_channels*sig_len, Seq_len)
 
@@ -1523,8 +1523,8 @@ class GPTForCardiacModelingWithEmbedding(ImageGPTPreTrainedModel):
 
             shift_logits = lm_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:, :].contiguous()
-            # loss_fct = MSELoss(reduction='sum')
-            loss_fct = L1Loss(reduction='mean')
+            loss_fct = MSELoss(reduction='mean')
+            # loss_fct = L1Loss(reduction='mean')
 
             loss = loss_fct(shift_logits.view(-1), shift_labels.view(-1))
 
