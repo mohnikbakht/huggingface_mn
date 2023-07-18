@@ -1191,18 +1191,18 @@ class CardiacTokenizerDecoderLinear(nn.Module):
                     
         self.conv1 = nn.Conv1d(in_channels= self.num_hidden,
                           out_channels=self.num_hidden,
-                          kernel_size=3,
-                          padding=2)
+                          kernel_size=5,
+                          padding=4)
         
         self.conv_list = clones(nn.Conv1d(in_channels=self.num_hidden,
                                      out_channels=self.num_hidden,
-                                     kernel_size=3,
-                                     padding=2), 3)
+                                     kernel_size=5,
+                                     padding=4), 3)
         
         self.conv2 = nn.Conv1d(in_channels=self.num_hidden,
                           out_channels= self.num_hidden,
-                          kernel_size=3,
-                          padding=2)
+                          kernel_size=5,
+                          padding=4)
         
         self.pre_batchnorm = nn.BatchNorm1d(self.num_hidden)
         self.batch_norm_list = clones(nn.BatchNorm1d(self.num_hidden), 3)

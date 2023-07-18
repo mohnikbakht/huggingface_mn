@@ -2367,6 +2367,7 @@ class GenerationMixin:
                 # print(next_token_logits.shape)
                 # print(inputs_embeds.shape)
                 inputs_embeds = torch.cat([inputs_embeds, next_token_logits.unsqueeze(1)], dim=1)
+                # inputs_embeds = torch.cat([inputs_embeds[:, 0, :].unsqueeze(1), outputs.logits[:, :, :]], dim=1) 
                 model_kwargs["inputs_embeds"]= inputs_embeds 
                 model_kwargs["past_key_values"]=None
                 # print(f"inputs_embeds {inputs_embeds.shape}")
