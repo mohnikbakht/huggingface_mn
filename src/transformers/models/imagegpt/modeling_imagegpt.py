@@ -887,890 +887,7 @@ class ImageGPTModel(ImageGPTPreTrainedModel):
             cross_attentions=all_cross_attentions,
         )
 
-
-## < - MN added 
-# Trainable Embedding encoder
-class CardiacTokenizerEncoderMix(nn.Module):
-    def __init__(self,
-                 embeddingConfig,
-                ):
-        # self.scg_token_length=token_length
-        super(CardiacTokenizerEncoderMix, self).__init__()
-                    
-        self.n_channels = embeddingConfig.in_channels
-        self.sig_len = embeddingConfig.sig_len
-                    
-        self.upsample1 = nn.Upsample(scale_factor=embeddingConfig.in_channels, mode='nearest')
-
-        self.conv1 = nn.Conv1d(in_channels= embeddingConfig.in_channels,
-                          out_channels=embeddingConfig.in_channels,
-                          kernel_size=9,
-                          padding=9//2,
-                          stride=1)
-        
-        self.conv2 = nn.Conv1d(in_channels=embeddingConfig.in_channels,
-                          out_channels=embeddingConfig.in_channels,
-                          kernel_size=5,
-                          padding=5//2,
-                          stride=1)
-        
-        self.conv3 = nn.Conv1d(in_channels=embeddingConfig.in_channels,
-                  out_channels=1,
-                  kernel_size=5,
-                  padding=5//2,
-                  stride=1)
-        
-        self.batch_norm1 = nn.BatchNorm1d(embeddingConfig.in_channels)
-        self.batch_norm2 = nn.BatchNorm1d(embeddingConfig.in_channels)
-        self.batch_norm3 = nn.BatchNorm1d(1)
-
-        self.dropout1 = nn.Dropout(p=0.2)
-        self.dropout2 = nn.Dropout(p=0.2)
-        self.dropout3 = nn.Dropout(p=0.2)
- 
-        self.projection = nn.Linear(self.n_channels*self.sig_len, self.n_channels*self.sig_len)
-
-        
-    def forward(self,
-                src: Tensor,
-                ):
-        
-        ### input (B, 1, in_channel*sig_len)
-        ### output (B, 1, emb_size)
-        batch_size = src.shape[0]
-        src_emb = src.reshape(-1, self.n_channels, self.sig_len)
-
-        src_emb = self.upsample1(src_emb)
-
-        src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
-        src_emb = self.dropout2(torch.relu(self.batch_norm2(self.conv2(src_emb))))
-        src_emb = self.dropout3(torch.relu(self.batch_norm3(self.conv3(src_emb))))
-
-        # resnet for vanishing gradients
-        # src_emb = src_emb1 + src_emb
-
-        src_emb = self.projection(src_emb) 
-        src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
-       
-        return src_emb
-
-    
-# Trainable Embedding decoder
-class CardiacTokenizerDecoderMix(nn.Module):
-    def __init__(self,
-                 embeddingConfig,
-                ):
-        # self.scg_token_length=token_length
-        super(CardiacTokenizerDecoderMix, self).__init__()
-
-        self.n_channels = embeddingConfig.in_channels
-        self.sig_len = embeddingConfig.sig_len
-                    
-        self.pooling1 = nn.MaxPool1d(kernel_size=embeddingConfig.in_channels,
-                          padding=0,
-                          stride=embeddingConfig.in_channels)
-                    
-        self.conv1 = nn.Conv1d(in_channels=1,
-                          out_channels=embeddingConfig.in_channels,
-                          kernel_size=5,
-                          padding=5//2,
-                          stride=1)
-                    
-        self.conv2 = nn.Conv1d(in_channels=embeddingConfig.in_channels,
-                          out_channels=embeddingConfig.in_channels,
-                          kernel_size=5,
-                          padding=5//2,
-                          stride=1)
-        
-        self.conv3 = nn.Conv1d(in_channels= embeddingConfig.in_channels,
-                          out_channels=embeddingConfig.in_channels,
-                          kernel_size=9,
-                          padding=9//2,
-                          stride=1)
-        
-        
-        
-       
-        self.batch_norm1 = nn.BatchNorm1d(embeddingConfig.in_channels)
-        self.batch_norm2 = nn.BatchNorm1d(embeddingConfig.in_channels)
-
-        self.dropout1 = nn.Dropout(p=0.2)
-        self.dropout2 = nn.Dropout(p=0.2)
-                    
-        self.projection = nn.Linear(self.n_channels*self.sig_len, self.n_channels*self.sig_len)
-        
-        
-    def forward(self,
-                src: Tensor,
-                ):
-                
-        ### input (B, 1, sig_len*n_channels)
-        ### output (B, n_channels, sig_len)
-
-        batch_size = src.shape[0]
-                    
-        src_emb = self.projection(src) 
-        src_emb = src_emb.reshape(-1, 1, self.n_channels*self.sig_len)
-                    
-        src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
-
-        src_emb = self.pooling1(src_emb)
-        src_emb = self.dropout2(torch.relu(self.batch_norm2(self.conv2(src_emb))))
-        src_emb = self.conv3(src_emb)
-
-        src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
-
-        return src_emb
-
-
-                    
-# Trainable Embedding encoder
-class CardiacTokenizerEncoderConcat(nn.Module):
-    def __init__(self,
-                 embeddingConfig,
-                ):
-        # self.scg_token_length=token_length
-        super(CardiacTokenizerEncoderConcat, self).__init__()
-                    
-        self.n_channels = embeddingConfig.in_channels
-        self.sig_len = embeddingConfig.sig_len
-                    
-        self.conv1 = nn.Conv1d(in_channels= embeddingConfig.in_channels,
-                          out_channels=embeddingConfig.in_channels,
-                          kernel_size=9,
-                          padding=9//2,
-                          stride=1)
-        
-        self.conv2 = nn.Conv1d(in_channels=embeddingConfig.in_channels,
-                          out_channels=embeddingConfig.in_channels,
-                          kernel_size=5,
-                          padding=5//2,
-                          stride=1)
-        
-        
-        self.batch_norm1 = nn.BatchNorm1d(embeddingConfig.in_channels)
-        self.batch_norm2 = nn.BatchNorm1d(embeddingConfig.in_channels)
-
-        self.dropout1 = nn.Dropout(p=0.2)
-        self.dropout2 = nn.Dropout(p=0.2)
-                    
-        self.projection = nn.Linear(embeddingConfig.sig_len, embeddingConfig.sig_len)
-
-        
-    def forward(self,
-                src: Tensor,
-                ):
-        
-        ### input (B, Seq_len, in_channel*sig_len)
-        ### output (B, Seq_len, 1, emb_size)
-        # print(src.shape)
-
-        batch_size = src.shape[0]
-        src_emb = src.reshape(-1, self.n_channels, self.sig_len)
-
-        src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
-        src_emb = self.dropout2(torch.relu(self.batch_norm2(self.conv2(src_emb))))
-
-        # resnet for vanishing gradients
-        # src_emb = src_emb1 + src_emb
-
-        src_emb = self.projection(src_emb) 
-        src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
-
-        return src_emb
-
-    
-# Trainable Embedding decoder
-class CardiacTokenizerDecoderConcat(nn.Module):
-    def __init__(self,
-                 embeddingConfig,
-                ):
-        # self.scg_token_length=token_length
-        super(CardiacTokenizerDecoderConcat, self).__init__()
-
-        self.n_channels = embeddingConfig.in_channels
-        self.sig_len = embeddingConfig.sig_len
-
-        self.conv1 = nn.Conv1d(in_channels=embeddingConfig.in_channels,
-                          out_channels=embeddingConfig.in_channels,
-                          kernel_size=5,
-                          padding=5//2,
-                          stride=1)
-                    
-        self.conv2 = nn.Conv1d(in_channels= embeddingConfig.in_channels,
-                          out_channels=embeddingConfig.in_channels,
-                          kernel_size=9,
-                          padding=9//2,
-                          stride=1)
    
-        self.batch_norm1 = nn.BatchNorm1d(embeddingConfig.in_channels)
-        self.batch_norm2 = nn.BatchNorm1d(embeddingConfig.in_channels)
-        
-        self.dropout1 = nn.Dropout(p=0.2)
-        self.dropout2 = nn.Dropout(p=0.2)
-       
-        self.projection = nn.Linear(embeddingConfig.sig_len, embeddingConfig.sig_len)
-                            
-    def forward(self,
-                src: Tensor,
-                ):
-                
-        ### input (B, Seq_len, sig_len*n_channels)
-        ### output (B, n_channels, sig_len)
-        batch_size = src.shape[0]
-        src_emb = src.reshape(-1, self.n_channels, self.sig_len)
-
-        src_emb = self.projection(src_emb) 
-
-        src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
-        src_emb = self.conv2(src_emb)
-                    
-        src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
-
-        return src_emb
-
-def clones(module, N):
-    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
-    
-# Trainable Embedding encoder
-class CardiacTokenizerEncoderLinear(nn.Module):
-    def __init__(self,
-                 embeddingConfig,
-                ):
-        # self.scg_token_length=token_length
-        super(CardiacTokenizerEncoderLinear, self).__init__()
-                    
-        self.n_channels = embeddingConfig.in_channels
-        self.sig_len = embeddingConfig.sig_len
-        self.num_hidden = self.n_channels*self.sig_len
-        self.embed_dim = self.n_channels*self.sig_len
-
-        self.dropout1 = nn.Dropout(p=0.2)
-        self.dropout2 = nn.Dropout(p=0.2)
-
-        self.fcn1 = nn.Linear(self.sig_len, self.sig_len)
-        self.fcn2 = nn.Linear(self.sig_len, self.sig_len)
-                    
-        self.projection = nn.Linear(self.num_hidden, self.num_hidden)
-
-        
-    def forward(self,
-                src: Tensor,
-                ):
-        
-        ## input (B, Seq_len, in_channel*sig_len)
-        ## output (B, Seq_len, in_channel*sig_len)
-        # print(src.shape)
-                    
-        src_emb = src.reshape(src.shape[0], src.shape[1], self.n_channels, self.sig_len)
-                    
-        src_emb = self.dropout1(torch.relu(self.fcn1(src_emb)))
-        src_emb = self.dropout2(torch.relu(self.fcn2(src_emb)))
-        # src_emb = self.dropout1(torch.relu(self.batch_norm3(self.fcn3(src_emb).transpose(1,2)))).transpose(1,2)
-
-
-        src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.embed_dim)
-        src_emb = self.projection(src_emb) 
-
-        return src_emb
-
-    
-# Trainable Embedding decoder
-class CardiacTokenizerDecoderLinear(nn.Module):
-    def __init__(self,
-                 embeddingConfig,
-                ):
-        # self.scg_token_length=token_length
-        super(CardiacTokenizerDecoderLinear, self).__init__()
-
-        self.n_channels = embeddingConfig.in_channels
-        self.sig_len = embeddingConfig.sig_len
-        self.num_hidden = self.n_channels*self.sig_len
-                    
-        self.projection = nn.Linear(self.num_hidden, self.num_hidden)
-                    
-        self.conv1 = nn.Conv1d(in_channels= self.num_hidden,
-                          out_channels=self.num_hidden,
-                          kernel_size=5,
-                          padding=4)
-        
-        self.conv_list = clones(nn.Conv1d(in_channels=self.num_hidden,
-                                     out_channels=self.num_hidden,
-                                     kernel_size=5,
-                                     padding=4), 3)
-        
-        self.conv2 = nn.Conv1d(in_channels=self.num_hidden,
-                          out_channels= self.num_hidden,
-                          kernel_size=5,
-                          padding=4)
-        
-        self.pre_batchnorm = nn.BatchNorm1d(self.num_hidden)
-        self.batch_norm_list = clones(nn.BatchNorm1d(self.num_hidden), 3)
-
-        self.dropout1 = nn.Dropout(p=0.1)
-        self.dropout_list = nn.ModuleList([nn.Dropout(p=0.1) for _ in range(3)])
-
-                    
-    def forward(self,
-                src: Tensor,
-                ):
-                
-        ### input (B, Seq_len, sig_len*n_channels)
-        ### output (B, Seq_len, n_channels, sig_len)
-                    
-        src_emb = self.projection(src)
-        # src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.n_channels*self.sig_len)
-        ### -> (B, Seq_len, n_channels*sig_len)
-                    
-        bin_out = src_emb.transpose(1,2)
-        ### -> (B, n_channels*sig_len, Seq_len)
-        src_emb = self.dropout1(torch.relu(self.pre_batchnorm(self.conv1(bin_out)[:, :, :-4])))
-        # src_emb = self.dropout1(torch.relu((self.conv1(bin_out)[:, :, :-4])))
-
-        ### -> (B, n_channels*sig_len, Seq_len)
-
-        for batch_norm, conv, dropout in zip(self.batch_norm_list, self.conv_list, self.dropout_list):
-            src_emb = dropout(torch.relu(batch_norm(conv(src_emb)[:, :, :-4])))
-            # src_emb = dropout(torch.relu((conv(src_emb)[:, :, :-4])))
-
-            ### -> (B, n_channels*sig_len, Seq_len)
-
-        src_emb = self.conv2(src_emb)[:, :, :-4]
-        ### -> (B, n_channels*sig_len, Seq_len)
-
-        # src_emb = self.projection(src_emb) 
-        
-        # equivalent to Post Mel Network from the TTS paper
-        src_emb = bin_out + src_emb
-
-        src_emb = src_emb.transpose(1, 2)
-        # src_emb = src_emb.reshape(src_emb.shape[0], src_emb.shape[1], self.embed_dim)
-        ### -> (B, Seq_len, n_channels*sig_len)
-
-        return src_emb #, bin_out.transpose(1, 2)
-           
-# Trainable Embedding for combining cardiac siganls into a 1D embedding vector
-class CardiacEmbeddingAE(nn.Module):
-    def __init__(self,
-                 embeddingConfig):
-        
-        super(CardiacEmbeddingAE, self).__init__()
-                     
-        self.embedding_size=embeddingConfig.sig_len * embeddingConfig.in_channels
-
-        #debug
-        self.decoderprenetoutput=None
-        self.encoderprenetoutput=None
-                     
-        print(f"embedding type: {embeddingConfig.embedding_type}")
-        if embeddingConfig.embedding_type=="concat":
-            ## CNN and flatten embedding
-            self.decoder=CardiacTokenizerDecoderConcat(embeddingConfig)
-            self.encoder=CardiacTokenizerEncoderConcat(embeddingConfig)
-            self.apply(self._init_weights)
-
-        elif embeddingConfig.embedding_type=="mix":
-            ## upsample CNN and transform to single channel
-            self.decoder=CardiacTokenizerDecoderMix(embeddingConfig)
-            self.encoder=CardiacTokenizerEncoderMix(embeddingConfig)
-            self.apply(self._init_weights)
-
-        elif embeddingConfig.embedding_type=="linear":
-            ## same prenet and postnet of synth scg generator
-            self.decoder=CardiacTokenizerDecoderLinear(embeddingConfig)
-            self.encoder=CardiacTokenizerEncoderLinear(embeddingConfig)
-            self.apply(self._init_weights)
-
-        else:
-            self.decoder=None
-            self.encoder=None
-                    
-
-    def _init_weights(self, module):
-        if isinstance(module, nn.Conv1d) or isinstance(module, nn.Linear):
-            # print(module)
-            torch.nn.init.xavier_uniform_(module.weight)
-            if module.bias is not None:
-                module.bias.data.zero_()
-                
-    def forward(self,
-                src: Tensor):       
-        ### src (B, 1, sig_len)
-        ### trg (B, 1, sig_len)
-        ### output (B, num_tokens, num_bins)
-        src_emb = self.encoder(src)
-        # self.encoderprenetoutput=src_emb.clone()
-        outs = self.decoder(src_emb)
-        return outs
-
-    def encode(self, src: Tensor):
-        
-        ### input (B, 1, sig_len)
-        ### output (B, num_tokens, num_bins) 
-        src_emb = self.encoder(src) 
-        return src_emb
-
-    def decode(self, src: Tensor):
-
-        ### input (B, 1, sig_len)
-        ### output (B, num_tokens, num_bins)
-        src_emb = self.decoder(src)
-        return src_emb
-
-
-class CardiacGPTEmbeddingConfig():
-   
-    def __init__(
-        self,
-        in_channels=3,  
-        sig_len=80,
-        embedding_type="concat",
-        **kwargs,
-    ):
-        self.in_channels = in_channels
-        self.sig_len = sig_len
-        self.embedding_type=embedding_type
-        
-@add_start_docstrings(
-    """
-    The CardioGPT Model transformer using embeddings for cardiac beat generation. Using autoencoders (as trainable embeddings) for transforming cardiac signals to embedding vectors.
-    """,
-    IMAGEGPT_START_DOCSTRING,
-)
-class GPTForCardiacModelingWithEmbedding(ImageGPTPreTrainedModel):
-    _tied_weights_keys = ["lm_head.weight"]
-
-    def __init__(self, config: ImageGPTConfig):
-        super().__init__(config)
-        self.transformer = ImageGPTModel(config)
-        # self.lm_head = nn.Linear(config.n_embd, config.vocab_size - 1, bias=False)
-
-        embeddingConfig = CardiacGPTEmbeddingConfig(in_channels=3, sig_len=80, embedding_type=config.embedding_type)
-        self.cardiac_embedding = CardiacEmbeddingAE(embeddingConfig)
-
-        # Model parallel
-        self.model_parallel = False
-        self.device_map = None
-        # Initialize weights and apply final processing
-        self.post_init()
-    
-    def get_output_embeddings(self):
-        return self.lm_head
-
-    def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
-
-    def prepare_inputs_for_generation(self, input_ids: torch.Tensor, past_key_values: Optional[bool] = None, inputs_embeds=None, **kwargs):
-
-        ## edits MN
-        past_key_values = None
-        
-        token_type_ids = kwargs.get("token_type_ids", None)
-        # only last token for inputs_ids if past is defined in kwargs                
-        if past_key_values:
-            input_ids = input_ids[:, -1].unsqueeze(-1)
-            if token_type_ids is not None:
-                token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
-
-        attention_mask = kwargs.get("attention_mask", None)
-        position_ids = kwargs.get("position_ids", None)
-
-        if attention_mask is not None and position_ids is None:
-            # create position_ids on the fly for batch generation
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            if past_key_values:
-                position_ids = position_ids[:, -1].unsqueeze(-1)
-        else:
-            position_ids = None
-
-        # print(f"attention_mask {attention_mask.shape}")
-        # print(f"position_ids {position_ids.shape}")
-
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-
-
-        model_inputs.update(
-            {
-                "past_key_values": past_key_values,
-                "use_cache": kwargs.get("use_cache"),
-                "position_ids": position_ids,
-                "attention_mask": attention_mask,
-                "token_type_ids": token_type_ids,
-            }
-        )
-        return model_inputs
-
-    @add_start_docstrings_to_model_forward(IMAGEGPT_INPUTS_DOCSTRING)
-    @replace_return_docstrings(output_type=CausalLMOutputWithCrossAttentions, config_class=_CONFIG_FOR_DOC)
-    def forward(
-        self,
-        input_ids: Optional[torch.Tensor] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        head_mask: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
-        encoder_attention_mask: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        **kwargs: Any,
-    ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
-        r"""
-        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
-            Labels for language modeling. Note that the labels **are shifted** inside the model, i.e. you can set
-            `labels = input_ids` Indices are selected in `[-100, 0, ..., config.vocab_size]` All labels set to `-100`
-            are ignored (masked), the loss is only computed for labels in `[0, ..., config.vocab_size]`
-
-        Returns:
-
-        Examples:
-
-        ```python
-        >>> from transformers import AutoImageProcessor, ImageGPTForCausalImageModeling
-        >>> import torch
-        >>> import matplotlib.pyplot as plt
-        >>> import numpy as np
-
-        >>> image_processor = AutoImageProcessor.from_pretrained("openai/imagegpt-small")
-        >>> model = ImageGPTForCausalImageModeling.from_pretrained("openai/imagegpt-small")
-        >>> device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        >>> model.to(device)  # doctest: +IGNORE_RESULT
-
-        >>> # unconditional generation of 8 images
-        >>> batch_size = 4
-        >>> context = torch.full((batch_size, 1), model.config.vocab_size - 1)  # initialize with SOS token
-        >>> context = context.to(device)
-        >>> output = model.generate(
-        ...     input_ids=context, max_length=model.config.n_positions + 1, temperature=1.0, do_sample=True, top_k=40
-        ... )
-
-        >>> clusters = image_processor.clusters
-        >>> height = image_processor.size["height"]
-        >>> width = image_processor.size["width"]
-
-        >>> samples = output[:, 1:].cpu().detach().numpy()
-        >>> samples_img = [
-        ...     np.reshape(np.rint(127.5 * (clusters[s] + 1.0)), [height, width, 3]).astype(np.uint8) for s in samples
-        ... ]  # convert color cluster tokens back to pixels
-        >>> f, axes = plt.subplots(1, batch_size, dpi=300)
-
-        >>> for img, ax in zip(samples_img, axes):  # doctest: +IGNORE_RESULT
-        ...     ax.axis("off")
-        ...     ax.imshow(img)
-        ```"""
-
-        if "pixel_values" in kwargs:
-            warnings.warn(
-                "The `pixel_values` argument is deprecated and will be removed in a future version, use `input_ids`"
-                " instead.",
-                FutureWarning,
-            )
-
-            if input_ids is not None:
-                raise ValueError(
-                    "You cannot pass both `pixel_values` and `input_ids`. Please make sure to only pass `input_ids`."
-                )
-
-            input_ids = kwargs.pop("pixel_values")
-
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        if self.cardiac_embedding.encoder is not None:
-            inputs_embeds = self.cardiac_embedding.encoder(inputs_embeds)
-
-        transformer_outputs = self.transformer(
-            input_ids,
-            past_key_values=past_key_values,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_attention_mask,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-        hidden_states = transformer_outputs[0]
-
-        if self.cardiac_embedding.decoder is not None:
-            hidden_states = self.cardiac_embedding.decoder(hidden_states)
-
-        # lm_logits = self.lm_head(hidden_states)
-        lm_logits = hidden_states
-
-
-        loss = None
-        if labels is not None:
-            # Shift so that tokens < n predict n
-            # shift_logits = lm_logits[..., :-1, :].contiguous()
-            # shift_labels = labels[..., 1:].contiguous()
-            # Flatten the tokens
-            # loss_fct = CrossEntropyLoss()
-            # loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-
-            shift_logits = lm_logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:, :].contiguous()
-            loss_fct = MSELoss(reduction='mean')
-            # loss_fct = L1Loss(reduction='mean')
-
-            loss = loss_fct(shift_logits.view(-1), shift_labels.view(-1))
-
-        if not return_dict:
-            output = (lm_logits,) + transformer_outputs[1:]
-            return ((loss,) + output) if loss is not None else output
-
-        return CausalLMOutputWithCrossAttentions(
-            loss=loss,
-            logits=lm_logits,
-            past_key_values=transformer_outputs.past_key_values,
-            hidden_states=transformer_outputs.hidden_states,
-            attentions=transformer_outputs.attentions,
-            cross_attentions=transformer_outputs.cross_attentions,
-        )
-
-    @staticmethod
-    def _reorder_cache(
-        past_key_values: Tuple[Tuple[torch.Tensor]], beam_idx: torch.Tensor
-    ) -> Tuple[Tuple[torch.Tensor]]:
-        """
-        This function is used to re-order the `past_key_values` cache if [`~PreTrainedModel.beam_search`] or
-        [`~PreTrainedModel.beam_sample`] is called. This is required to match `past_key_values` with the correct
-        beam_idx at every generation step.
-        """
-        return tuple(
-            tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in layer_past)
-            for layer_past in past_key_values
-        )
-
-
-@add_start_docstrings(
-    """
-    The CardioGPT Model transformer using embeddings for cardiac beat generation.
-    """,
-    IMAGEGPT_START_DOCSTRING,
-)
-class GPTForCardiacModeling(ImageGPTPreTrainedModel):
-    _tied_weights_keys = ["lm_head.weight"]
-
-    def __init__(self, config: ImageGPTConfig):
-        super().__init__(config)
-        self.transformer = ImageGPTModel(config)
-        # self.lm_head = nn.Linear(config.n_embd, config.vocab_size - 1, bias=False)
-
-        # Model parallel
-        self.model_parallel = False
-        self.device_map = None
-        # Initialize weights and apply final processing
-        self.post_init()
-
-    def get_output_embeddings(self):
-        return self.lm_head
-
-    def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
-
-    def prepare_inputs_for_generation(self, input_ids: torch.Tensor, past_key_values: Optional[bool] = None, inputs_embeds=None, **kwargs):
-
-        ## edits MN
-        past_key_values = None
-        
-        token_type_ids = kwargs.get("token_type_ids", None)
-        # only last token for inputs_ids if past is defined in kwargs                
-        if past_key_values:
-            input_ids = input_ids[:, -1].unsqueeze(-1)
-            if token_type_ids is not None:
-                token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
-
-        attention_mask = kwargs.get("attention_mask", None)
-        position_ids = kwargs.get("position_ids", None)
-
-        if attention_mask is not None and position_ids is None:
-            # create position_ids on the fly for batch generation
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            if past_key_values:
-                position_ids = position_ids[:, -1].unsqueeze(-1)
-        else:
-            position_ids = None
-
-        # print(f"attention_mask {attention_mask.shape}")
-        # print(f"position_ids {position_ids.shape}")
-
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-
-        model_inputs.update(
-            {
-                "past_key_values": past_key_values,
-                "use_cache": kwargs.get("use_cache"),
-                "position_ids": position_ids,
-                "attention_mask": attention_mask,
-                "token_type_ids": token_type_ids,
-            }
-        )
-        return model_inputs
-
-    @add_start_docstrings_to_model_forward(IMAGEGPT_INPUTS_DOCSTRING)
-    @replace_return_docstrings(output_type=CausalLMOutputWithCrossAttentions, config_class=_CONFIG_FOR_DOC)
-    def forward(
-        self,
-        input_ids: Optional[torch.Tensor] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        head_mask: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
-        encoder_attention_mask: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        **kwargs: Any,
-    ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
-        r"""
-        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
-            Labels for language modeling. Note that the labels **are shifted** inside the model, i.e. you can set
-            `labels = input_ids` Indices are selected in `[-100, 0, ..., config.vocab_size]` All labels set to `-100`
-            are ignored (masked), the loss is only computed for labels in `[0, ..., config.vocab_size]`
-
-        Returns:
-
-        Examples:
-
-        ```python
-        >>> from transformers import AutoImageProcessor, ImageGPTForCausalImageModeling
-        >>> import torch
-        >>> import matplotlib.pyplot as plt
-        >>> import numpy as np
-
-        >>> image_processor = AutoImageProcessor.from_pretrained("openai/imagegpt-small")
-        >>> model = ImageGPTForCausalImageModeling.from_pretrained("openai/imagegpt-small")
-        >>> device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        >>> model.to(device)  # doctest: +IGNORE_RESULT
-
-        >>> # unconditional generation of 8 images
-        >>> batch_size = 4
-        >>> context = torch.full((batch_size, 1), model.config.vocab_size - 1)  # initialize with SOS token
-        >>> context = context.to(device)
-        >>> output = model.generate(
-        ...     input_ids=context, max_length=model.config.n_positions + 1, temperature=1.0, do_sample=True, top_k=40
-        ... )
-
-        >>> clusters = image_processor.clusters
-        >>> height = image_processor.size["height"]
-        >>> width = image_processor.size["width"]
-
-        >>> samples = output[:, 1:].cpu().detach().numpy()
-        >>> samples_img = [
-        ...     np.reshape(np.rint(127.5 * (clusters[s] + 1.0)), [height, width, 3]).astype(np.uint8) for s in samples
-        ... ]  # convert color cluster tokens back to pixels
-        >>> f, axes = plt.subplots(1, batch_size, dpi=300)
-
-        >>> for img, ax in zip(samples_img, axes):  # doctest: +IGNORE_RESULT
-        ...     ax.axis("off")
-        ...     ax.imshow(img)
-        ```"""
-
-        if "pixel_values" in kwargs:
-            warnings.warn(
-                "The `pixel_values` argument is deprecated and will be removed in a future version, use `input_ids`"
-                " instead.",
-                FutureWarning,
-            )
-
-            if input_ids is not None:
-                raise ValueError(
-                    "You cannot pass both `pixel_values` and `input_ids`. Please make sure to only pass `input_ids`."
-                )
-
-            input_ids = kwargs.pop("pixel_values")
-
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        transformer_outputs = self.transformer(
-            input_ids,
-            past_key_values=past_key_values,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_attention_mask,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-        hidden_states = transformer_outputs[0]
-
-        # lm_logits = self.lm_head(hidden_states)
-        lm_logits = hidden_states
-
-
-        loss = None
-        if labels is not None:
-            # Shift so that tokens < n predict n
-            # shift_logits = lm_logits[..., :-1, :].contiguous()
-            # shift_labels = labels[..., 1:].contiguous()
-            # Flatten the tokens
-            # loss_fct = CrossEntropyLoss()
-            # loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-
-            shift_logits = lm_logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:, :].contiguous()
-            loss_fct = MSELoss()
-
-            loss = loss_fct(shift_logits.view(-1), shift_labels.view(-1))
-
-        if not return_dict:
-            output = (lm_logits,) + transformer_outputs[1:]
-            return ((loss,) + output) if loss is not None else output
-
-        return CausalLMOutputWithCrossAttentions(
-            loss=loss,
-            logits=lm_logits,
-            past_key_values=transformer_outputs.past_key_values,
-            hidden_states=transformer_outputs.hidden_states,
-            attentions=transformer_outputs.attentions,
-            cross_attentions=transformer_outputs.cross_attentions,
-        )
-
-    @staticmethod
-    def _reorder_cache(
-        past_key_values: Tuple[Tuple[torch.Tensor]], beam_idx: torch.Tensor
-    ) -> Tuple[Tuple[torch.Tensor]]:
-        """
-        This function is used to re-order the `past_key_values` cache if [`~PreTrainedModel.beam_search`] or
-        [`~PreTrainedModel.beam_sample`] is called. This is required to match `past_key_values` with the correct
-        beam_idx at every generation step.
-        """
-        return tuple(
-            tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in layer_past)
-            for layer_past in past_key_values
-        )
-
-##  MN added - >
-    
 
 @add_start_docstrings(
     """
@@ -2092,3 +1209,1324 @@ class ImageGPTForImageClassification(ImageGPTPreTrainedModel):
             hidden_states=transformer_outputs.hidden_states,
             attentions=transformer_outputs.attentions,
         )
+
+
+
+
+
+
+## < - MN added 
+# Trainable Embedding encoder
+class CardiacTokenizerEncoderMix(nn.Module):
+    def __init__(self,
+                 embeddingConfig,
+                ):
+        # self.scg_token_length=token_length
+        super(CardiacTokenizerEncoderMix, self).__init__()
+                    
+        self.n_channels = embeddingConfig.in_channels
+        self.sig_len = embeddingConfig.sig_len
+                    
+        self.upsample1 = nn.Upsample(scale_factor=embeddingConfig.in_channels, mode='nearest')
+
+        self.conv1 = nn.Conv1d(in_channels= embeddingConfig.in_channels,
+                          out_channels=embeddingConfig.in_channels,
+                          kernel_size=9,
+                          padding=9//2,
+                          stride=1)
+        
+        self.conv2 = nn.Conv1d(in_channels=embeddingConfig.in_channels,
+                          out_channels=embeddingConfig.in_channels,
+                          kernel_size=5,
+                          padding=5//2,
+                          stride=1)
+        
+        self.conv3 = nn.Conv1d(in_channels=embeddingConfig.in_channels,
+                  out_channels=1,
+                  kernel_size=5,
+                  padding=5//2,
+                  stride=1)
+        
+        self.batch_norm1 = nn.BatchNorm1d(embeddingConfig.in_channels)
+        self.batch_norm2 = nn.BatchNorm1d(embeddingConfig.in_channels)
+        self.batch_norm3 = nn.BatchNorm1d(1)
+
+        self.dropout1 = nn.Dropout(p=0.2)
+        self.dropout2 = nn.Dropout(p=0.2)
+        self.dropout3 = nn.Dropout(p=0.2)
+ 
+        self.projection = nn.Linear(self.n_channels*self.sig_len, self.n_channels*self.sig_len)
+
+        
+    def forward(self,
+                src: Tensor,
+                ):
+        
+        ### input (B, 1, in_channel*sig_len)
+        ### output (B, 1, emb_size)
+        batch_size = src.shape[0]
+        src_emb = src.reshape(-1, self.n_channels, self.sig_len)
+
+        src_emb = self.upsample1(src_emb)
+
+        src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
+        src_emb = self.dropout2(torch.relu(self.batch_norm2(self.conv2(src_emb))))
+        src_emb = self.dropout3(torch.relu(self.batch_norm3(self.conv3(src_emb))))
+
+        # resnet for vanishing gradients
+        # src_emb = src_emb1 + src_emb
+
+        src_emb = self.projection(src_emb) 
+        src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
+       
+        return src_emb
+
+    
+# Trainable Embedding decoder
+class CardiacTokenizerDecoderMix(nn.Module):
+    def __init__(self,
+                 embeddingConfig,
+                ):
+        # self.scg_token_length=token_length
+        super(CardiacTokenizerDecoderMix, self).__init__()
+
+        self.n_channels = embeddingConfig.in_channels
+        self.sig_len = embeddingConfig.sig_len
+                    
+        self.pooling1 = nn.MaxPool1d(kernel_size=embeddingConfig.in_channels,
+                          padding=0,
+                          stride=embeddingConfig.in_channels)
+                    
+        self.conv1 = nn.Conv1d(in_channels=1,
+                          out_channels=embeddingConfig.in_channels,
+                          kernel_size=5,
+                          padding=5//2,
+                          stride=1)
+                    
+        self.conv2 = nn.Conv1d(in_channels=embeddingConfig.in_channels,
+                          out_channels=embeddingConfig.in_channels,
+                          kernel_size=5,
+                          padding=5//2,
+                          stride=1)
+        
+        self.conv3 = nn.Conv1d(in_channels= embeddingConfig.in_channels,
+                          out_channels=embeddingConfig.in_channels,
+                          kernel_size=9,
+                          padding=9//2,
+                          stride=1)
+        
+        
+        
+       
+        self.batch_norm1 = nn.BatchNorm1d(embeddingConfig.in_channels)
+        self.batch_norm2 = nn.BatchNorm1d(embeddingConfig.in_channels)
+
+        self.dropout1 = nn.Dropout(p=0.2)
+        self.dropout2 = nn.Dropout(p=0.2)
+                    
+        self.projection = nn.Linear(self.n_channels*self.sig_len, self.n_channels*self.sig_len)
+        
+        
+    def forward(self,
+                src: Tensor,
+                ):
+                
+        ### input (B, 1, sig_len*n_channels)
+        ### output (B, n_channels, sig_len)
+
+        batch_size = src.shape[0]
+                    
+        src_emb = self.projection(src) 
+        src_emb = src_emb.reshape(-1, 1, self.n_channels*self.sig_len)
+                    
+        src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
+
+        src_emb = self.pooling1(src_emb)
+        src_emb = self.dropout2(torch.relu(self.batch_norm2(self.conv2(src_emb))))
+        src_emb = self.conv3(src_emb)
+
+        src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
+
+        return src_emb
+
+
+                    
+# Trainable Embedding encoder
+class CardiacTokenizerEncoderConcat(nn.Module):
+    def __init__(self,
+                 embeddingConfig,
+                ):
+        # self.scg_token_length=token_length
+        super(CardiacTokenizerEncoderConcat, self).__init__()
+                    
+        self.n_channels = embeddingConfig.in_channels
+        self.sig_len = embeddingConfig.sig_len
+                    
+        self.conv1 = nn.Conv1d(in_channels= embeddingConfig.in_channels,
+                          out_channels=embeddingConfig.in_channels,
+                          kernel_size=9,
+                          padding=9//2,
+                          stride=1)
+        
+        self.conv2 = nn.Conv1d(in_channels=embeddingConfig.in_channels,
+                          out_channels=embeddingConfig.in_channels,
+                          kernel_size=5,
+                          padding=5//2,
+                          stride=1)
+        
+        
+        self.batch_norm1 = nn.BatchNorm1d(embeddingConfig.in_channels)
+        self.batch_norm2 = nn.BatchNorm1d(embeddingConfig.in_channels)
+
+        self.dropout1 = nn.Dropout(p=0.2)
+        self.dropout2 = nn.Dropout(p=0.2)
+                    
+        self.projection = nn.Linear(embeddingConfig.sig_len, embeddingConfig.sig_len)
+
+        
+    def forward(self,
+                src: Tensor,
+                ):
+        
+        ### input (B, Seq_len, in_channel*sig_len)
+        ### output (B, Seq_len, 1, emb_size)
+        # print(src.shape)
+
+        batch_size = src.shape[0]
+        src_emb = src.reshape(-1, self.n_channels, self.sig_len)
+
+        src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
+        src_emb = self.dropout2(torch.relu(self.batch_norm2(self.conv2(src_emb))))
+
+        # resnet for vanishing gradients
+        # src_emb = src_emb1 + src_emb
+
+        src_emb = self.projection(src_emb) 
+        src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
+
+        return src_emb
+
+    
+# Trainable Embedding decoder
+class CardiacTokenizerDecoderConcat(nn.Module):
+    def __init__(self,
+                 embeddingConfig,
+                ):
+        # self.scg_token_length=token_length
+        super(CardiacTokenizerDecoderConcat, self).__init__()
+
+        self.n_channels = embeddingConfig.in_channels
+        self.sig_len = embeddingConfig.sig_len
+
+        self.conv1 = nn.Conv1d(in_channels=embeddingConfig.in_channels,
+                          out_channels=embeddingConfig.in_channels,
+                          kernel_size=5,
+                          padding=5//2,
+                          stride=1)
+                    
+        self.conv2 = nn.Conv1d(in_channels= embeddingConfig.in_channels,
+                          out_channels=embeddingConfig.in_channels,
+                          kernel_size=9,
+                          padding=9//2,
+                          stride=1)
+   
+        self.batch_norm1 = nn.BatchNorm1d(embeddingConfig.in_channels)
+        self.batch_norm2 = nn.BatchNorm1d(embeddingConfig.in_channels)
+        
+        self.dropout1 = nn.Dropout(p=0.2)
+        self.dropout2 = nn.Dropout(p=0.2)
+       
+        self.projection = nn.Linear(embeddingConfig.sig_len, embeddingConfig.sig_len)
+                            
+    def forward(self,
+                src: Tensor,
+                ):
+                
+        ### input (B, Seq_len, sig_len*n_channels)
+        ### output (B, n_channels, sig_len)
+        batch_size = src.shape[0]
+        src_emb = src.reshape(-1, self.n_channels, self.sig_len)
+
+        src_emb = self.projection(src_emb) 
+
+        src_emb = self.dropout1(torch.relu(self.batch_norm1(self.conv1(src_emb))))
+        src_emb = self.conv2(src_emb)
+                    
+        src_emb = src_emb.reshape(batch_size, -1, self.n_channels*self.sig_len)
+
+        return src_emb
+
+def clones(module, N):
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+
+
+def t2v(tau, f, out_features, w, b, w0, b0, arg=None):
+    if arg:
+        v1 = f(torch.matmul(tau, w) + b, arg)
+    else:
+        #print(w.shape, t1.shape, b.shape)
+        v1 = f(torch.matmul(tau, w) + b)
+    v2 = torch.matmul(tau, w0) + b0
+    #print(v1.shape)
+    return torch.cat([v1, v2], -1)
+
+class SineActivation(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(SineActivation, self).__init__()
+        self.out_features = out_features
+        self.w0 = nn.parameter.Parameter(torch.randn(in_features, 1))
+        self.b0 = nn.parameter.Parameter(torch.randn(1))
+        self.w = nn.parameter.Parameter(torch.randn(in_features, out_features-1))
+        self.b = nn.parameter.Parameter(torch.randn(out_features-1))
+        self.f = torch.sin
+
+    def forward(self, tau):
+        return t2v(tau, self.f, self.out_features, self.w, self.b, self.w0, self.b0)
+
+class CosineActivation(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(CosineActivation, self).__init__()
+        self.out_features = out_features
+        self.w0 = nn.parameter.Parameter(torch.randn(in_features, 1))
+        self.b0 = nn.parameter.Parameter(torch.randn(1))
+        self.w = nn.parameter.Parameter(torch.randn(in_features, out_features-1))
+        self.b = nn.parameter.Parameter(torch.randn(out_features-1))
+        self.f = torch.cos
+
+    def forward(self, tau):
+        return t2v(tau, self.f, self.out_features, self.w, self.b, self.w0, self.b0)
+        
+# Trainable Embedding encoder
+class CardiacTokenizerEncoderLinear(nn.Module):
+    def __init__(self,
+                 embeddingConfig,
+                ):
+        # self.scg_token_length=token_length
+        super(CardiacTokenizerEncoderLinear, self).__init__()
+                    
+        self.n_channels = embeddingConfig.in_channels
+        self.sig_len = embeddingConfig.sig_len
+        self.embed_dim = embeddingConfig.n_embd
+        self.num_hidden = self.embed_dim
+
+        
+        
+        # self.batch_norm1 = nn.BatchNorm1d(self.num_hidden)
+        # self.batch_norm2 = nn.BatchNorm1d(self.embed_dim)
+
+        self.layer_norm1 = nn.LayerNorm(self.num_hidden)
+        self.layer_norm2 = nn.LayerNorm(self.embed_dim)
+        
+        self.dropout1 = nn.Dropout(p=0.2)
+        self.dropout2 = nn.Dropout(p=0.2)
+
+        # self.l1 = SineActivation(self.n_channels*self.sig_len, self.num_hidden)
+        # self.l1 = CosineActivation(self.n_channels*self.sig_len, self.num_hidden)
+
+        self.fcn1 = nn.Linear(self.n_channels*self.sig_len, self.num_hidden)
+        # self.fcn1 = nn.Linear(self.num_hidden, self.num_hidden)
+        self.fcn2 = nn.Linear(self.num_hidden, self.embed_dim)
+                    
+        
+        # num_conv_blocks =1 
+        # self.conv_list = clones(nn.Conv1d(in_channels=self.embed_dim,
+        #                              out_channels=self.embed_dim,
+        #                              kernel_size=3,
+        #                              padding=2), num_conv_blocks)
+        # self.batch_norm_list = clones(nn.BatchNorm1d(self.embed_dim), num_conv_blocks)
+        # self.dropout_list = nn.ModuleList([nn.Dropout(p=0.1) for _ in range(num_conv_blocks)])
+        
+        self.projection = nn.Linear(self.embed_dim, self.embed_dim)
+
+
+        ## fix stuff (maybe add layer norm) next try inception blocks
+
+        # self.conv_dropout1 = nn.Dropout(p=0.2)
+        # self.conv_dropout2 = nn.Dropout(p=0.2)
+        # self.conv_dropout3 = nn.Dropout(p=0.2)
+
+        # self.conv1 = nn.Conv2d(in_channels=1,
+        #                              out_channels=2,
+        #                              kernel_size=(9, 9),
+        #                              padding=(9//2, 9//2))
+
+        # self.maxpool1 = nn.MaxPool2d((1,2))
+        
+        # self.conv2 = nn.Conv2d(in_channels=2,
+        #                              out_channels=4,
+        #                              kernel_size=(9, 9),
+        #                              padding=(9//2, 9//2))
+
+        # self.maxpool2 = nn.MaxPool2d((1,2))
+
+        # self.conv3 = nn.Conv2d(in_channels=4,
+        #                              out_channels=8,
+        #                              kernel_size=(9, 9),
+        #                              padding=(9//2, 9//2))
+
+        # self.maxpool3 = nn.MaxPool2d((1,2))
+        
+        # # self.dropout1 = nn.Dropout(p=0.2)
+        # # self.dropout2 = nn.Dropout(p=0.2)
+
+        # # self.fcn1 = nn.Linear(self.n_channels*self.sig_len, self.num_hidden)
+        # # self.fcn2 = nn.Linear(self.num_hidden, self.embed_dim)
+        
+        # self.projection = nn.Linear(self.n_channels*self.sig_len, self.embed_dim)
+
+        
+    def forward(self,
+                src: Tensor,
+                ):
+        
+        ## input (B, Seq_len, in_channel*sig_len)
+        ## output (B, Seq_len, in_channel*sig_len)
+        # print(src.shape)
+
+        src_emb = src.reshape(src.shape[0], src.shape[1], self.n_channels*self.sig_len)
+
+        # src_emb = self.conv_dropout1(torch.relu(self.conv1(src_emb)))
+        # src_emb = self.maxpool1(src_emb)
+        
+        # src_emb = self.conv_dropout2(torch.relu(self.conv2(src_emb)))
+        # src_emb = self.maxpool2(src_emb)
+        
+        # src_emb = self.conv_dropout3(torch.relu(self.conv3(src_emb)))
+        # src_emb = self.maxpool3(src_emb)
+
+        # src_emb = src_emb.transpose(1,2)
+
+        # src_emb = src_emb.reshape(src.shape[0], src.shape[1], -1)
+
+        src_emb = self.dropout1(torch.relu(self.layer_norm1(self.fcn1(src_emb))))
+        src_emb = self.dropout2(torch.relu(self.layer_norm2(self.fcn2(src_emb))))
+       
+        src_emb = self.projection(src_emb) 
+
+        return src_emb
+
+
+
+# Trainable Embedding decoder
+class CardiacTokenizerDecoderLinear(nn.Module):
+    def __init__(self,
+                 embeddingConfig,
+                ):
+        # self.scg_token_length=token_length
+        super(CardiacTokenizerDecoderLinear, self).__init__()
+
+        self.n_channels = embeddingConfig.in_channels
+        self.sig_len = embeddingConfig.sig_len
+        
+        self.num_hidden = self.n_channels*self.sig_len
+        
+        self.embed_dim = embeddingConfig.n_embd
+
+        
+        ### old cnn
+        self.projection = nn.Linear(self.embed_dim, self.num_hidden)
+                    
+        self.conv1 = nn.Conv1d(in_channels = self.n_channels*self.sig_len,
+                          out_channels=self.num_hidden,
+                          kernel_size=3,
+                          padding=2)
+        
+        num_conv_blocks =1 
+        self.conv_list = clones(nn.Conv1d(in_channels=self.num_hidden,
+                                     out_channels=self.num_hidden,
+                                     kernel_size=3,
+                                     padding=2), num_conv_blocks)
+        
+        self.conv2 = nn.Conv1d(in_channels=self.num_hidden,
+                          out_channels= self.n_channels*self.sig_len,
+                          kernel_size=3,
+                          padding=2)
+        
+        self.pre_batchnorm = nn.BatchNorm1d(self.num_hidden)
+        self.batch_norm_list = clones(nn.BatchNorm1d(self.num_hidden), num_conv_blocks)
+
+        self.dropout1 = nn.Dropout(p=0.1)
+        self.dropout_list = nn.ModuleList([nn.Dropout(p=0.1) for _ in range(num_conv_blocks)])
+
+        ### fixin some stuff
+        # self.projection = nn.Linear(self.embed_dim, self.num_hidden)
+        
+        # self.conv_dropout1 = nn.Dropout(p=0.2)
+        # self.conv_dropout2 = nn.Dropout(p=0.2)
+        # self.conv_dropout3 = nn.Dropout(p=0.2)
+
+        # self.upsample1 = nn.Upsample(scale_factor=(1,2))
+        # self.conv1 = nn.Conv2d(in_channels=8,
+        #                              out_channels=4,
+        #                              kernel_size=(9, 9),
+        #                              padding=(9//2, 9//2))
+        
+        # self.upsample2 = nn.Upsample(scale_factor=(1,2))
+        # self.conv2 = nn.Conv2d(in_channels=4,
+        #                              out_channels=2,
+        #                              kernel_size=(9,9),
+        #                              padding=(9//2, 9//2))
+
+        # self.upsample3 = nn.Upsample(scale_factor=(1,2))
+        # self.conv3 = nn.Conv2d(in_channels=2,
+        #                              out_channels=1,
+        #                              kernel_size=(15,15),
+        #                              padding=(15//2, 15//2))
+        
+    
+        # num_conv_blocks1 =2
+        # self.conv_list = clones(nn.Conv2d(in_channels=self.n_channels,
+        #                              out_channels=self.n_channels,
+        #                              kernel_size=(5, 125),
+        #                              padding=(5//2, 125//2)), num_conv_blocks1)
+
+        # self.batch_norm_list = clones(nn.BatchNorm2d(self.n_channels), num_conv_blocks1)
+        # self.dropout_list = nn.ModuleList([nn.Dropout(p=0.1) for _ in range(num_conv_blocks1)])
+        
+        # self.conv4 = nn.Conv2d(in_channels=1,
+        #                              out_channels=1,
+        #                              kernel_size=(9, 9),
+        #                              padding=(9//2, 9//2))
+        
+        
+        ## new FCN 
+        
+            
+        # self.batch_norm1 = nn.BatchNorm1d(self.num_hidden)
+        # self.batch_norm2 = nn.BatchNorm1d(self.n_channels*self.sig_len)
+
+        # self.layer_norm1 = nn.LayerNorm(self.embed_dim)
+        # self.layer_norm2 = nn.LayerNorm(self.n_channels*self.sig_len)
+        
+        # self.dropout1 = nn.Dropout(p=0.2)
+        # self.dropout2 = nn.Dropout(p=0.2)
+
+        # self.fcn1 = nn.Linear(self.embed_dim, self.num_hidden)
+        # self.fcn2 = nn.Linear(self.num_hidden, self.n_channels*self.sig_len)
+        # self.fcn3 = nn.Linear(self.n_channels*self.sig_len, self.n_channels*self.sig_len)
+
+
+        # num_conv_blocks =1 
+        # self.conv_list = clones(nn.Conv1d(in_channels=1,
+        #                              out_channels=1,
+        #                              kernel_size=121,
+        #                              padding=121//2), num_conv_blocks)
+        
+        # self.conv2 = nn.Conv1d(in_channels= 1,
+        #                   out_channels= 1,
+        #                   kernel_size=121,
+        #                   padding=121//2)
+        
+        # self.layer_norm_post = nn.LayerNorm(self.num_hidden)
+        # self.layer_norm_list = clones(nn.LayerNorm(self.num_hidden), num_conv_blocks)
+
+        # self.dropout_post = nn.Dropout(p=0.1)
+        # self.dropout_list = nn.ModuleList([nn.Dropout(p=0.1) for _ in range(num_conv_blocks)])
+    
+        
+
+    
+    def forward(self,
+                src: Tensor,
+                ):
+            
+        ### old with cnn 
+        
+        ### input (B, Seq_len, embed_dim)
+        ### output (B, Seq_len, n_channels, sig_len)
+                    
+        src_emb = self.projection(src)
+        # src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.n_channels*self.sig_len)
+        ### -> (B, Seq_len, n_channels*sig_len)
+                    
+        bin_out = src_emb.transpose(1,2)
+        ### -> (B, n_channels*sig_len, Seq_len)
+        src_emb = self.dropout1(torch.nn.functional.gelu(self.pre_batchnorm(self.conv1(bin_out)[:, :, :-2])))
+        # src_emb = self.dropout1(torch.relu((self.conv1(bin_out)[:, :, :-4])))
+
+        ### -> (B, n_channels*sig_len, Seq_len)
+
+        for batch_norm, conv, dropout in zip(self.batch_norm_list, self.conv_list, self.dropout_list):
+            src_emb = dropout(torch.nn.functional.gelu(batch_norm(conv(src_emb)[:, :, :-2])))
+            # src_emb = dropout(torch.relu((conv(src_emb)[:, :, :-4])))
+
+            ### -> (B, n_channels*sig_len, Seq_len)
+
+        src_emb = self.conv2(src_emb)[:, :, :-2]
+        ### -> (B, n_channels*sig_len, Seq_len)
+
+        # src_emb = self.projection(src_emb) 
+        
+        # equivalent to Post Mel Network from the TTS paper
+        src_emb = bin_out + src_emb
+
+        src_emb = src_emb.transpose(1, 2)
+        # src_emb = src_emb.reshape(src_emb.shape[0], src_emb.shape[1], self.embed_dim)
+        ### -> (B, Seq_len, n_channels*sig_len)
+
+        return src_emb, bin_out.transpose(1, 2)
+
+        ## fix some stuff ...
+ 
+        
+        # ### input (B, Seq_len, embed_dim)
+        # ### output (B, Seq_len, n_channels, sig_len)
+                    
+        # src_emb = self.projection(src)
+        # ### -> (B, Seq_len, n_channels*sig_len)
+
+        # src_emb = src_emb.reshape(src.shape[0], src.shape[1], 8, -1)
+        # src_emb = src_emb.transpose(1,2)
+        # ### -> (B, 1, Seq_len*n_channels*sig_len)
+
+        # src_emb = self.upsample1(src_emb)
+        # src_emb = self.conv_dropout1(torch.relu(self.conv1(src_emb)))
+
+        # src_emb = self.upsample2(src_emb)
+        # src_emb = self.conv_dropout2(torch.relu(self.conv2(src_emb)))
+
+        # src_emb = self.upsample3(src_emb)
+        # src_emb = self.conv_dropout3(torch.relu(self.conv3(src_emb)))
+
+        # # for batch_norm, conv, dropout in zip(self.batch_norm_list, self.conv_list, self.dropout_list):
+        # #     src_emb = dropout(torch.nn.functional.gelu(batch_norm(conv(src_emb))))
+
+        #     ### -> (B, 1, Seq_len*n_channels*sig_len)
+
+        # src_emb = self.conv4(src_emb)
+        # ### -> (B, 1, Seq_len*n_channels*sig_len)
+        # src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.n_channels*self.sig_len)
+        
+        # # src_emb = bin_out + src_emb
+
+        # return src_emb
+
+    
+        ## replace with FCNs
+        
+        
+        ### input (B, Seq_len, embed_dim)
+        ### output (B, Seq_len, n_channels, sig_len)
+                    
+        # src_emb = self.projection(src)
+        # src_emb = src_emb.reshape(src.shape[0], src.shape[1], self.n_channels*self.sig_len)
+        ### -> (B, Seq_len, n_channels*sig_len)
+                    
+        # src_emb = self.dropout1(torch.relu(self.layer_norm1(self.fcn1(src))))
+        # src_emb = self.dropout2(torch.relu(self.layer_norm2(self.fcn2(src_emb))))
+        # binout = self.fcn3(src_emb)
+
+        # src_emb = binout.reshape(src.shape[0], 1, -1)
+        # for layer_norm, conv, dropout in zip(self.layer_norm_list, self.conv_list, self.dropout_list):
+        #     src_emb = dropout(torch.relu((conv(src_emb))))
+
+        # src_emb = self.dropout_post(torch.relu((self.conv2(src_emb))))
+
+        # src_emb = src_emb.reshape(src.shape[0], src.shape[1], -1)
+
+
+        # src_emb = src_emb + binout
+
+        # return src_emb, binout
+    
+           
+# Trainable Embedding for combining cardiac siganls into a 1D embedding vector
+class CardiacEmbeddingAE(nn.Module):
+    def __init__(self,
+                 embeddingConfig):
+        
+        super(CardiacEmbeddingAE, self).__init__()
+                     
+        self.embedding_size=embeddingConfig.sig_len * embeddingConfig.in_channels
+
+        #debug
+        self.decoderprenetoutput=None
+        self.encoderprenetoutput=None
+                     
+        print(f"embedding type: {embeddingConfig.embedding_type}")
+        if embeddingConfig.embedding_type=="concat":
+            ## CNN and flatten embedding
+            self.decoder=CardiacTokenizerDecoderConcat(embeddingConfig)
+            self.encoder=CardiacTokenizerEncoderConcat(embeddingConfig)
+            self.apply(self._init_weights)
+
+        elif embeddingConfig.embedding_type=="mix":
+            ## upsample CNN and transform to single channel
+            self.decoder=CardiacTokenizerDecoderMix(embeddingConfig)
+            self.encoder=CardiacTokenizerEncoderMix(embeddingConfig)
+            self.apply(self._init_weights)
+
+        elif embeddingConfig.embedding_type=="linear":
+            ## same prenet and postnet of synth scg generator
+            self.decoder=CardiacTokenizerDecoderLinear(embeddingConfig)
+            self.encoder=CardiacTokenizerEncoderLinear(embeddingConfig)
+            self.apply(self._init_weights)
+
+        else:
+            self.decoder=None
+            self.encoder=None
+                    
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Conv1d) or isinstance(module, nn.Linear):
+            # print(module)
+            torch.nn.init.xavier_uniform_(module.weight)
+            if module.bias is not None:
+                module.bias.data.zero_()
+                
+    def forward(self,
+                src: Tensor):       
+        ### src (B, 1, sig_len)
+        ### trg (B, 1, sig_len)
+        ### output (B, num_tokens, num_bins)
+        return self.decoder(self.encoder(src))
+
+    def encode(self, src: Tensor):
+        
+        ### input (B, 1, sig_len)
+        ### output (B, num_tokens, num_bins) 
+        return self.encoder(src) 
+
+    def decode(self, src: Tensor):
+
+        ### input (B, 1, sig_len)
+        ### output (B, num_tokens, num_bins)
+        return self.decoder(src)
+
+
+class CardiacGPTEmbeddingConfig():
+   
+    def __init__(
+        self,
+        in_channels=1,  
+        sig_len=240,
+        embedding_type="concat",
+        n_embd = 80,
+        **kwargs,
+    ):
+        self.in_channels = in_channels
+        self.sig_len = sig_len
+        self.embedding_type=embedding_type
+        self.n_embd = n_embd
+        
+@add_start_docstrings(
+    """
+    The CardioGPT Model transformer using embeddings for cardiac beat generation. Using autoencoders (as trainable embeddings) for transforming cardiac signals to embedding vectors.
+    """,
+    IMAGEGPT_START_DOCSTRING,
+)
+class GPTForCardiacModelingWithEmbedding(ImageGPTPreTrainedModel):
+    _tied_weights_keys = ["lm_head.weight"]
+
+    def __init__(self, config: ImageGPTConfig):
+        super().__init__(config)
+        self.embedding_type = config.embedding_type
+        self.transformer = ImageGPTModel(config)
+        # self.lm_head = nn.Linear(config.n_embd, config.vocab_size - 1, bias=False)
+
+        # Model parallel
+        self.model_parallel = False
+        self.device_map = None
+        # Initialize weights and apply final processing
+        self.post_init()
+    
+        embeddingConfig = CardiacGPTEmbeddingConfig(in_channels=config.in_channels, sig_len=config.sig_len, embedding_type=config.embedding_type, n_embd=config.n_embd)
+        self.cardiac_embedding = CardiacEmbeddingAE(embeddingConfig)
+        
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        self.lm_head = new_embeddings
+
+    def prepare_inputs_for_generation(self, input_ids: torch.Tensor, past_key_values: Optional[bool] = None, inputs_embeds=None, **kwargs):
+
+        ## edits MN
+        past_key_values = None
+        
+        token_type_ids = kwargs.get("token_type_ids", None)
+        # only last token for inputs_ids if past is defined in kwargs                
+        if past_key_values:
+            input_ids = input_ids[:, -1].unsqueeze(-1)
+            if token_type_ids is not None:
+                token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
+
+        attention_mask = kwargs.get("attention_mask", None)
+        position_ids = kwargs.get("position_ids", None)
+
+        if attention_mask is not None and position_ids is None:
+            # create position_ids on the fly for batch generation
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            if past_key_values:
+                position_ids = position_ids[:, -1].unsqueeze(-1)
+        else:
+            position_ids = None
+
+        # print(f"attention_mask {attention_mask.shape}")
+        # print(f"position_ids {position_ids.shape}")
+
+        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
+        if inputs_embeds is not None and past_key_values is None:
+            model_inputs = {"inputs_embeds": inputs_embeds}
+        else:
+            model_inputs = {"input_ids": input_ids}
+
+
+        model_inputs.update(
+            {
+                "past_key_values": past_key_values,
+                "use_cache": kwargs.get("use_cache"),
+                "position_ids": position_ids,
+                "attention_mask": attention_mask,
+                "token_type_ids": token_type_ids,
+            }
+        )
+        return model_inputs
+
+    @add_start_docstrings_to_model_forward(IMAGEGPT_INPUTS_DOCSTRING)
+    @replace_return_docstrings(output_type=CausalLMOutputWithCrossAttentions, config_class=_CONFIG_FOR_DOC)
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        **kwargs: Any,
+    ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for language modeling. Note that the labels **are shifted** inside the model, i.e. you can set
+            `labels = input_ids` Indices are selected in `[-100, 0, ..., config.vocab_size]` All labels set to `-100`
+            are ignored (masked), the loss is only computed for labels in `[0, ..., config.vocab_size]`
+
+        Returns:
+
+        Examples:
+
+        ```python
+        >>> from transformers import AutoImageProcessor, ImageGPTForCausalImageModeling
+        >>> import torch
+        >>> import matplotlib.pyplot as plt
+        >>> import numpy as np
+
+        >>> image_processor = AutoImageProcessor.from_pretrained("openai/imagegpt-small")
+        >>> model = ImageGPTForCausalImageModeling.from_pretrained("openai/imagegpt-small")
+        >>> device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        >>> model.to(device)  # doctest: +IGNORE_RESULT
+
+        >>> # unconditional generation of 8 images
+        >>> batch_size = 4
+        >>> context = torch.full((batch_size, 1), model.config.vocab_size - 1)  # initialize with SOS token
+        >>> context = context.to(device)
+        >>> output = model.generate(
+        ...     input_ids=context, max_length=model.config.n_positions + 1, temperature=1.0, do_sample=True, top_k=40
+        ... )
+
+        >>> clusters = image_processor.clusters
+        >>> height = image_processor.size["height"]
+        >>> width = image_processor.size["width"]
+
+        >>> samples = output[:, 1:].cpu().detach().numpy()
+        >>> samples_img = [
+        ...     np.reshape(np.rint(127.5 * (clusters[s] + 1.0)), [height, width, 3]).astype(np.uint8) for s in samples
+        ... ]  # convert color cluster tokens back to pixels
+        >>> f, axes = plt.subplots(1, batch_size, dpi=300)
+
+        >>> for img, ax in zip(samples_img, axes):  # doctest: +IGNORE_RESULT
+        ...     ax.axis("off")
+        ...     ax.imshow(img)
+        ```"""
+
+        if "pixel_values" in kwargs:
+            warnings.warn(
+                "The `pixel_values` argument is deprecated and will be removed in a future version, use `input_ids`"
+                " instead.",
+                FutureWarning,
+            )
+
+            if input_ids is not None:
+                raise ValueError(
+                    "You cannot pass both `pixel_values` and `input_ids`. Please make sure to only pass `input_ids`."
+                )
+
+            input_ids = kwargs.pop("pixel_values")
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if self.cardiac_embedding.encoder is not None:
+            inputs_embeds = self.cardiac_embedding.encode(inputs_embeds)
+
+        transformer_outputs = self.transformer(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        hidden_states = transformer_outputs[0]
+
+        if self.cardiac_embedding.decoder is not None:
+            hidden_states = self.cardiac_embedding.decode(hidden_states)
+
+        # lm_logits = self.lm_head(hidden_states)
+        lm_logits = hidden_states
+
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            # shift_logits = lm_logits[..., :-1, :].contiguous()
+            # shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            # loss_fct = CrossEntropyLoss()
+            # loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+            # shift_logits = lm_logits[..., :-1, :].contiguous()
+            # shift_labels = labels[..., 1:, :].contiguous()
+            # loss_fct = MSELoss(reduction='mean')
+            # loss_fct = MSELoss(reduction='sum')
+            # loss_fct = L1Loss(reduction='mean')
+            
+            if self.embedding_type == "linear":
+                shift_logits_0 = lm_logits[0][..., :-1, :].contiguous()
+                shift_logits_1 = lm_logits[1][..., :-1, :].contiguous()
+                shift_labels = labels[..., 1:, :].contiguous()
+                loss_fct = MSELoss(reduction='mean')
+                loss = loss_fct(shift_logits_0.view(-1), shift_labels.view(-1))
+                loss += loss_fct(shift_logits_1.view(-1), shift_labels.view(-1))
+                
+                # lm_logits = lm_logits[0]
+                                      
+            else:
+                shift_logits = lm_logits[..., :-1, :].contiguous()
+                shift_labels = labels[..., 1:, :].contiguous()
+                loss_fct = MSELoss(reduction='mean')
+                loss = loss_fct(shift_logits.view(-1), shift_labels.view(-1))
+
+        if self.embedding_type == "linear":
+            bin_out = lm_logits[1]
+            lm_logits = lm_logits[0]
+            
+        if not return_dict:
+            output = (lm_logits,) + transformer_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return CausalLMOutputWithCrossAttentions(
+            loss=loss,
+            logits=lm_logits,
+            past_key_values=transformer_outputs.past_key_values,
+            hidden_states=transformer_outputs.hidden_states,
+            attentions=transformer_outputs.attentions,
+            cross_attentions=transformer_outputs.cross_attentions,
+        )
+
+    @staticmethod
+    def _reorder_cache(
+        past_key_values: Tuple[Tuple[torch.Tensor]], beam_idx: torch.Tensor
+    ) -> Tuple[Tuple[torch.Tensor]]:
+        """
+        This function is used to re-order the `past_key_values` cache if [`~PreTrainedModel.beam_search`] or
+        [`~PreTrainedModel.beam_sample`] is called. This is required to match `past_key_values` with the correct
+        beam_idx at every generation step.
+        """
+        return tuple(
+            tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in layer_past)
+            for layer_past in past_key_values
+        )
+
+
+@add_start_docstrings(
+"""
+The CardioGPT Model transformer with a classification head on top (linear layer).
+[`CardioGPTforClassification`] average-pools the hidden states in order to do the classification.
+""",
+IMAGEGPT_START_DOCSTRING,
+)
+class CardioGPTforClassification(ImageGPTPreTrainedModel):
+    def __init__(self, config: ImageGPTConfig):
+        super().__init__(config)
+        self.num_labels = config.num_labels
+        self.transformer = ImageGPTModel(config)
+
+        self.classifier = nn.Sequential(
+          # nn.Linear(config.n_embd, config.n_embd),
+          # nn.ReLU(),
+          nn.Linear(config.n_embd, config.n_embd),
+          nn.LayerNorm(config.n_embd),
+          nn.ReLU(),
+          nn.Dropout(0.1),  
+          nn.Linear(config.n_embd, self.num_labels, bias=False)
+        )
+
+        
+        self.embedding_type = config.embedding_type
+    
+        embeddingConfig = CardiacGPTEmbeddingConfig(in_channels=config.in_channels, sig_len=config.sig_len, embedding_type=config.embedding_type, n_embd=config.n_embd)
+        self.cardiac_embedding = CardiacEmbeddingAE(embeddingConfig)
+        
+        # Initialize weights and apply final processing
+        self.post_init()
+
+    @add_start_docstrings_to_model_forward(IMAGEGPT_INPUTS_DOCSTRING)
+    @replace_return_docstrings(output_type=SequenceClassifierOutputWithPast, config_class=_CONFIG_FOR_DOC)
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        **kwargs: Any,
+    ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
+            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
+            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+
+        Returns:
+
+        Examples:
+
+        ```python
+        >>> from transformers import AutoImageProcessor, ImageGPTForImageClassification
+        >>> from PIL import Image
+        >>> import requests
+
+        >>> url = "http://images.cocodataset.org/val2017/000000039769.jpg"
+        >>> image = Image.open(requests.get(url, stream=True).raw)
+
+        >>> image_processor = AutoImageProcessor.from_pretrained("openai/imagegpt-small")
+        >>> model = ImageGPTForImageClassification.from_pretrained("openai/imagegpt-small")
+
+        >>> inputs = image_processor(images=image, return_tensors="pt")
+        >>> outputs = model(**inputs)
+        >>> logits = outputs.logits
+        ```"""
+
+        if "pixel_values" in kwargs:
+            warnings.warn(
+                "The `pixel_values` argument is deprecated and will be removed in a future version, use `input_ids`"
+                " instead.",
+                FutureWarning,
+            )
+
+            if input_ids is not None:
+                raise ValueError(
+                    "You cannot pass both `pixel_values` and `input_ids`. Please make sure to only pass `input_ids`."
+                )
+
+            input_ids = kwargs.pop("pixel_values")
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if self.cardiac_embedding.encoder is not None:
+            inputs_embeds = self.cardiac_embedding.encode(inputs_embeds)
+        
+        transformer_outputs = self.transformer(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        hidden_states = transformer_outputs[0]
+
+        # if self.cardiac_embedding.decoder is not None:
+        #     # hidden_states = self.cardiac_embedding.decode(hidden_states)
+        #     hidden_states = self.cardiac_embedding.decoder.projection(hidden_states)
+
+        # if self.embedding_type == "linear":
+        #     hidden_states = hidden_states[0]
+            
+        # average-pool the hidden states along the sequence dimension
+        pooled_hidden_states = hidden_states.mean(dim=1)
+        # pooled_hidden_states = hidden_states.reshape(hidden_states.shape[0], 1, -1)
+        # pooled_hidden_states = hidden_states[:,0]
+        logits = self.classifier(pooled_hidden_states)
+        # pooled_hidden_states = self.fc1(pooled_hidden_states)
+        # pooled_hidden_states = torch.relu(self.fc2(pooled_hidden_states))
+        # # project from (batch_size, hidden_size) to (batch_size, num_labels)
+        # logits = self.score(pooled_hidden_states)
+
+        loss = None
+        if labels is not None:
+            if self.config.problem_type is None:
+                if self.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
+
+            if self.config.problem_type == "regression":
+                loss_fct = MSELoss()
+                if self.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                loss_fct = BCEWithLogitsLoss()
+                loss = loss_fct(logits, labels)
+        if not return_dict:
+            output = (logits,) + transformer_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return SequenceClassifierOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=transformer_outputs.past_key_values,
+            hidden_states=transformer_outputs.hidden_states,
+            attentions=transformer_outputs.attentions,
+        )
+
+
+
+@add_start_docstrings(
+    """
+    The CardioGPT Model transformer using embeddings for cardiac beat generation.
+    """,
+    IMAGEGPT_START_DOCSTRING,
+)
+class GPTForCardiacModeling(ImageGPTPreTrainedModel):
+    _tied_weights_keys = ["lm_head.weight"]
+
+    def __init__(self, config: ImageGPTConfig):
+        super().__init__(config)
+        self.transformer = ImageGPTModel(config)
+        # self.lm_head = nn.Linear(config.n_embd, config.vocab_size - 1, bias=False)
+
+        # Model parallel
+        self.model_parallel = False
+        self.device_map = None
+        # Initialize weights and apply final processing
+        self.post_init()
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        self.lm_head = new_embeddings
+
+    def prepare_inputs_for_generation(self, input_ids: torch.Tensor, past_key_values: Optional[bool] = None, inputs_embeds=None, **kwargs):
+
+        ## edits MN
+        past_key_values = None
+        
+        token_type_ids = kwargs.get("token_type_ids", None)
+        # only last token for inputs_ids if past is defined in kwargs                
+        if past_key_values:
+            input_ids = input_ids[:, -1].unsqueeze(-1)
+            if token_type_ids is not None:
+                token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
+
+        attention_mask = kwargs.get("attention_mask", None)
+        position_ids = kwargs.get("position_ids", None)
+
+        if attention_mask is not None and position_ids is None:
+            # create position_ids on the fly for batch generation
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            if past_key_values:
+                position_ids = position_ids[:, -1].unsqueeze(-1)
+        else:
+            position_ids = None
+
+        # print(f"attention_mask {attention_mask.shape}")
+        # print(f"position_ids {position_ids.shape}")
+
+        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
+        if inputs_embeds is not None and past_key_values is None:
+            model_inputs = {"inputs_embeds": inputs_embeds}
+        else:
+            model_inputs = {"input_ids": input_ids}
+
+        model_inputs.update(
+            {
+                "past_key_values": past_key_values,
+                "use_cache": kwargs.get("use_cache"),
+                "position_ids": position_ids,
+                "attention_mask": attention_mask,
+                "token_type_ids": token_type_ids,
+            }
+        )
+        return model_inputs
+
+    @add_start_docstrings_to_model_forward(IMAGEGPT_INPUTS_DOCSTRING)
+    @replace_return_docstrings(output_type=CausalLMOutputWithCrossAttentions, config_class=_CONFIG_FOR_DOC)
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        **kwargs: Any,
+    ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for language modeling. Note that the labels **are shifted** inside the model, i.e. you can set
+            `labels = input_ids` Indices are selected in `[-100, 0, ..., config.vocab_size]` All labels set to `-100`
+            are ignored (masked), the loss is only computed for labels in `[0, ..., config.vocab_size]`
+
+        Returns:
+
+        Examples:
+
+        ```python
+        >>> from transformers import AutoImageProcessor, ImageGPTForCausalImageModeling
+        >>> import torch
+        >>> import matplotlib.pyplot as plt
+        >>> import numpy as np
+
+        >>> image_processor = AutoImageProcessor.from_pretrained("openai/imagegpt-small")
+        >>> model = ImageGPTForCausalImageModeling.from_pretrained("openai/imagegpt-small")
+        >>> device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        >>> model.to(device)  # doctest: +IGNORE_RESULT
+
+        >>> # unconditional generation of 8 images
+        >>> batch_size = 4
+        >>> context = torch.full((batch_size, 1), model.config.vocab_size - 1)  # initialize with SOS token
+        >>> context = context.to(device)
+        >>> output = model.generate(
+        ...     input_ids=context, max_length=model.config.n_positions + 1, temperature=1.0, do_sample=True, top_k=40
+        ... )
+
+        >>> clusters = image_processor.clusters
+        >>> height = image_processor.size["height"]
+        >>> width = image_processor.size["width"]
+
+        >>> samples = output[:, 1:].cpu().detach().numpy()
+        >>> samples_img = [
+        ...     np.reshape(np.rint(127.5 * (clusters[s] + 1.0)), [height, width, 3]).astype(np.uint8) for s in samples
+        ... ]  # convert color cluster tokens back to pixels
+        >>> f, axes = plt.subplots(1, batch_size, dpi=300)
+
+        >>> for img, ax in zip(samples_img, axes):  # doctest: +IGNORE_RESULT
+        ...     ax.axis("off")
+        ...     ax.imshow(img)
+        ```"""
+
+        if "pixel_values" in kwargs:
+            warnings.warn(
+                "The `pixel_values` argument is deprecated and will be removed in a future version, use `input_ids`"
+                " instead.",
+                FutureWarning,
+            )
+
+            if input_ids is not None:
+                raise ValueError(
+                    "You cannot pass both `pixel_values` and `input_ids`. Please make sure to only pass `input_ids`."
+                )
+
+            input_ids = kwargs.pop("pixel_values")
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        transformer_outputs = self.transformer(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        hidden_states = transformer_outputs[0]
+
+        # lm_logits = self.lm_head(hidden_states)
+        lm_logits = hidden_states
+
+
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            # shift_logits = lm_logits[..., :-1, :].contiguous()
+            # shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            # loss_fct = CrossEntropyLoss()
+            # loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+            shift_logits = lm_logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:, :].contiguous()
+            loss_fct = MSELoss()
+
+            loss = loss_fct(shift_logits.view(-1), shift_labels.view(-1))
+
+        if not return_dict:
+            output = (lm_logits,) + transformer_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return CausalLMOutputWithCrossAttentions(
+            loss=loss,
+            logits=lm_logits,
+            past_key_values=transformer_outputs.past_key_values,
+            hidden_states=transformer_outputs.hidden_states,
+            attentions=transformer_outputs.attentions,
+            cross_attentions=transformer_outputs.cross_attentions,
+        )
+
+    @staticmethod
+    def _reorder_cache(
+        past_key_values: Tuple[Tuple[torch.Tensor]], beam_idx: torch.Tensor
+    ) -> Tuple[Tuple[torch.Tensor]]:
+        """
+        This function is used to re-order the `past_key_values` cache if [`~PreTrainedModel.beam_search`] or
+        [`~PreTrainedModel.beam_sample`] is called. This is required to match `past_key_values` with the correct
+        beam_idx at every generation step.
+        """
+        return tuple(
+            tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in layer_past)
+            for layer_past in past_key_values
+        )
+
+##  MN added - >
