@@ -2347,7 +2347,7 @@ class GenerationMixin:
 
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
-
+            # print(model_inputs)
             # forward pass to get next token
             outputs = self(
                 **model_inputs,
@@ -2360,6 +2360,7 @@ class GenerationMixin:
                 continue  # don't waste resources running the code we don't need
 
             next_token_logits = outputs.logits[:, -1, :]
+            # print(outputs.logits.shape)
 
             ## edits MN
             if model_kwargs["inputs_embeds"] is not None:
